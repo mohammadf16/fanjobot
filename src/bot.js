@@ -2419,6 +2419,20 @@ async function replySupportTicketFromAdminBot(ctx, ticketId, messageText, status
 async function closeSupportTicketFromAdminBot(ctx, ticketId) {
   if (!(await ensureSupportAdminAccess(ctx))) return;
   await ensureSupportTables();
+  const ticketRes = await query(
+    `SELECT t.id, t.subject, t.user_id, u.telegram_id
+     FROM support_tickets t
+     JOIN users u ON u.id = t.user_id
+     WHERE t.id = $1
+     LIMIT 1`,
+    [ticketId]
+  );
+  if (!ticketRes.rows.length) {
+    await ctx.reply("تیکت پیدا نشد.");
+    return;
+  }
+  const ticket = ticketRes.rows[0];
+
   const updated = await query(
     `UPDATE support_tickets
      SET status = 'closed',
@@ -2431,7 +2445,25 @@ async function closeSupportTicketFromAdminBot(ctx, ticketId) {
     await ctx.reply("تیکت پیدا نشد.");
     return;
   }
-  await ctx.reply(`تیکت #${ticketId} بسته شد.`);
+
+  let userNotify = "ارسال نشد";
+  if (ticket.telegram_id && isBotAvailable()) {
+    const notifyText = [
+      "به روزرسانی تیکت پشتیبانی",
+      "",
+      `تیکت #${ticketId}`,
+      `موضوع: ${ticket.subject || "-"}`,
+      "وضعیت: closed"
+    ].join("\n");
+    try {
+      await sendTelegramMessage(ticket.telegram_id, notifyText);
+      userNotify = "ارسال شد";
+    } catch (error) {
+      userNotify = `خطا: ${error?.message || String(error)}`;
+    }
+  }
+
+  await ctx.reply(`تیکت #${ticketId} بسته شد.\nنوتیف کاربر: ${userNotify}`);
 }
 
 function asArray(value) {

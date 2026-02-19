@@ -186,6 +186,105 @@ async function notifySubmissionDecision(submission, action, reason) {
   );
 }
 
+function formatSupportStatus(status) {
+  const map = {
+    open: "Open",
+    pending: "Pending",
+    answered: "Answered",
+    closed: "Closed"
+  };
+  return map[String(status || "").toLowerCase()] || String(status || "-");
+}
+
+function formatIndustryApplicationStatus(status) {
+  const map = {
+    draft: "Draft",
+    submitted: "Submitted",
+    viewed: "Viewed",
+    interview: "Interview",
+    rejected: "Rejected",
+    accepted: "Accepted"
+  };
+  return map[String(status || "").toLowerCase()] || String(status || "-");
+}
+
+function buildSupportStatusUpdateMessage(ticket, status, note) {
+  const lines = [
+    "Fanjobo support update",
+    "",
+    `Ticket #${ticket.id}`,
+    `Subject: ${ticket.subject || "-"}`,
+    `Status: ${formatSupportStatus(status)}`
+  ];
+
+  const normalizedNote = toNullableString(note);
+  if (normalizedNote) {
+    lines.push("", `Admin note: ${normalizedNote}`);
+  }
+
+  lines.push("", "Open the bot support panel for more details.");
+  return lines.join("\n");
+}
+
+function buildIndustryApplicationStatusMessage(application, status) {
+  return [
+    "Fanjobo industry application update",
+    "",
+    `Application #${application.id}`,
+    `Opportunity: ${application.opportunity_title || "-"}`,
+    `Status: ${formatIndustryApplicationStatus(status)}`,
+    "",
+    "Open the bot Industry panel to review your requests."
+  ].join("\n");
+}
+
+function buildIndustryOpportunityUpdateMessage(opportunity, status, approvalStatus) {
+  const lines = [
+    "Fanjobo opportunity update",
+    "",
+    `Opportunity #${opportunity.id}`,
+    `Title: ${opportunity.title || "-"}`,
+    `Status: ${String(status || opportunity.status || "-")}`,
+    `Approval: ${String(approvalStatus || opportunity.approval_status || "-")}`,
+    "",
+    "Open the bot Industry panel to review available opportunities."
+  ];
+  return lines.join("\n");
+}
+
+function buildIndustryProjectUpdateMessage(project, status) {
+  return [
+    "Fanjobo project update",
+    "",
+    `Project #${project.id}`,
+    `Title: ${project.title || "-"}`,
+    `Status: ${String(status || project.status || "-")}`,
+    "",
+    "Open the bot Industry panel to review your active projects."
+  ].join("\n");
+}
+
+async function notifyUsersByIdList(userIds, text, metadata = {}) {
+  const uniqueIds = [...new Set((Array.isArray(userIds) ? userIds : []).map((value) => Number(value)).filter((value) => value > 0))];
+  if (!uniqueIds.length) {
+    return { total: 0, delivered: 0, failed: 0, results: [] };
+  }
+
+  const results = [];
+  for (const userId of uniqueIds) {
+    const notify = await notifyTelegramUser(userId, text, metadata);
+    results.push({ userId, ...notify });
+  }
+
+  const delivered = results.filter((item) => item.delivered).length;
+  return {
+    total: uniqueIds.length,
+    delivered,
+    failed: uniqueIds.length - delivered,
+    results
+  };
+}
+
 async function resolveAdminSenderUserId(adminIdRaw) {
   const normalized = toNullableString(adminIdRaw);
   if (!normalized) return null;
@@ -388,6 +487,16 @@ router.patch("/support/tickets/:ticketId/status", async (req, res, next) => {
       return res.status(400).json({ error: "Invalid ticket status" });
     }
 
+    const currentTicketRes = await query(
+      `SELECT id, user_id, subject, status
+       FROM support_tickets
+       WHERE id = $1
+       LIMIT 1`,
+      [ticketId]
+    );
+    if (!currentTicketRes.rows.length) return res.status(404).json({ error: "Ticket not found" });
+    const currentTicket = currentTicketRes.rows[0];
+
     const updated = await query(
       `UPDATE support_tickets
        SET status = $1,
@@ -408,7 +517,29 @@ router.patch("/support/tickets/:ticketId/status", async (req, res, next) => {
       );
     }
 
-    res.json({ ticket: updated.rows[0] });
+    await createNotification({
+      type: "support-ticket-status-updated",
+      title: "Support ticket status updated",
+      message: `Ticket #${ticketId} status changed to ${status}`,
+      payload: { ticketId, userId: currentTicket.user_id, previousStatus: currentTicket.status, status, note }
+    });
+
+    const notify = await notifyTelegramUser(
+      currentTicket.user_id,
+      buildSupportStatusUpdateMessage(
+        { id: currentTicket.id, subject: currentTicket.subject },
+        status,
+        note
+      ),
+      {
+        ticketId,
+        source: "support-admin-status",
+        previousStatus: currentTicket.status,
+        status
+      }
+    );
+
+    res.json({ ticket: updated.rows[0], notify });
   } catch (error) {
     next(error);
   }
@@ -1227,6 +1358,16 @@ router.patch("/industry/opportunities/:opportunityId/approval", async (req, res,
     const opportunityId = Number(req.params.opportunityId);
     const approvalStatus = req.body?.approvalStatus || "approved";
 
+    const beforeRes = await query(
+      `SELECT id, title, status, approval_status
+       FROM industry_opportunities
+       WHERE id = $1
+       LIMIT 1`,
+      [opportunityId]
+    );
+    if (!beforeRes.rows.length) return res.status(404).json({ error: "Opportunity not found" });
+    const before = beforeRes.rows[0];
+
     const updated = await query(
       `UPDATE industry_opportunities
        SET approval_status = $1,
@@ -1237,7 +1378,29 @@ router.patch("/industry/opportunities/:opportunityId/approval", async (req, res,
     );
 
     if (!updated.rows.length) return res.status(404).json({ error: "Opportunity not found" });
-    res.json({ opportunity: updated.rows[0] });
+
+    const affectedUsersRes = await query(
+      `SELECT DISTINCT user_id
+       FROM (
+         SELECT user_id FROM industry_applications WHERE opportunity_id = $1
+         UNION ALL
+         SELECT user_id FROM industry_saved_opportunities WHERE opportunity_id = $1
+       ) AS affected`,
+      [opportunityId]
+    );
+
+    const notify = await notifyUsersByIdList(
+      affectedUsersRes.rows.map((row) => row.user_id),
+      buildIndustryOpportunityUpdateMessage(updated.rows[0], updated.rows[0].status, approvalStatus),
+      {
+        source: "industry-opportunity-approval",
+        opportunityId,
+        previousApprovalStatus: before.approval_status,
+        approvalStatus
+      }
+    );
+
+    res.json({ opportunity: updated.rows[0], notify });
   } catch (error) {
     next(error);
   }
@@ -1247,6 +1410,17 @@ router.patch("/industry/opportunities/:opportunityId/status", async (req, res, n
   try {
     const opportunityId = Number(req.params.opportunityId);
     const status = req.body?.status || "open";
+
+    const beforeRes = await query(
+      `SELECT id, title, status, approval_status
+       FROM industry_opportunities
+       WHERE id = $1
+       LIMIT 1`,
+      [opportunityId]
+    );
+    if (!beforeRes.rows.length) return res.status(404).json({ error: "Opportunity not found" });
+    const before = beforeRes.rows[0];
+
     const updated = await query(
       `UPDATE industry_opportunities
        SET status = $1, updated_at = NOW()
@@ -1256,7 +1430,29 @@ router.patch("/industry/opportunities/:opportunityId/status", async (req, res, n
     );
 
     if (!updated.rows.length) return res.status(404).json({ error: "Opportunity not found" });
-    res.json({ opportunity: updated.rows[0] });
+
+    const affectedUsersRes = await query(
+      `SELECT DISTINCT user_id
+       FROM (
+         SELECT user_id FROM industry_applications WHERE opportunity_id = $1
+         UNION ALL
+         SELECT user_id FROM industry_saved_opportunities WHERE opportunity_id = $1
+       ) AS affected`,
+      [opportunityId]
+    );
+
+    const notify = await notifyUsersByIdList(
+      affectedUsersRes.rows.map((row) => row.user_id),
+      buildIndustryOpportunityUpdateMessage(updated.rows[0], status, updated.rows[0].approval_status),
+      {
+        source: "industry-opportunity-status",
+        opportunityId,
+        previousStatus: before.status,
+        status
+      }
+    );
+
+    res.json({ opportunity: updated.rows[0], notify });
   } catch (error) {
     next(error);
   }
@@ -1401,6 +1597,17 @@ router.patch("/industry/projects/:projectId/status", async (req, res, next) => {
   try {
     const projectId = Number(req.params.projectId);
     const status = req.body?.status || "open";
+
+    const beforeRes = await query(
+      `SELECT id, title, status
+       FROM industry_projects
+       WHERE id = $1
+       LIMIT 1`,
+      [projectId]
+    );
+    if (!beforeRes.rows.length) return res.status(404).json({ error: "Project not found" });
+    const before = beforeRes.rows[0];
+
     const updated = await query(
       `UPDATE industry_projects
        SET status = $1, updated_at = NOW()
@@ -1410,7 +1617,26 @@ router.patch("/industry/projects/:projectId/status", async (req, res, next) => {
     );
 
     if (!updated.rows.length) return res.status(404).json({ error: "Project not found" });
-    res.json({ project: updated.rows[0] });
+
+    const affectedUsersRes = await query(
+      `SELECT DISTINCT user_id
+       FROM industry_student_projects
+       WHERE project_id = $1`,
+      [projectId]
+    );
+
+    const notify = await notifyUsersByIdList(
+      affectedUsersRes.rows.map((row) => row.user_id),
+      buildIndustryProjectUpdateMessage(updated.rows[0], status),
+      {
+        source: "industry-project-status",
+        projectId,
+        previousStatus: before.status,
+        status
+      }
+    );
+
+    res.json({ project: updated.rows[0], notify });
   } catch (error) {
     next(error);
   }
@@ -1610,6 +1836,17 @@ router.patch("/industry/applications/:applicationId/status", async (req, res, ne
     const allowed = new Set(["draft", "submitted", "viewed", "interview", "rejected", "accepted"]);
     if (!allowed.has(status)) return res.status(400).json({ error: "Invalid application status" });
 
+    const currentRes = await query(
+      `SELECT a.id, a.user_id, a.status, o.title AS opportunity_title
+       FROM industry_applications a
+       JOIN industry_opportunities o ON o.id = a.opportunity_id
+       WHERE a.id = $1
+       LIMIT 1`,
+      [applicationId]
+    );
+    if (!currentRes.rows.length) return res.status(404).json({ error: "Application not found" });
+    const current = currentRes.rows[0];
+
     const updated = await query(
       `UPDATE industry_applications
        SET status = $1,
@@ -1620,7 +1857,34 @@ router.patch("/industry/applications/:applicationId/status", async (req, res, ne
     );
 
     if (!updated.rows.length) return res.status(404).json({ error: "Application not found" });
-    res.json({ application: updated.rows[0] });
+
+    await createNotification({
+      type: "industry-application-status-updated",
+      title: "Industry application status updated",
+      message: `Application #${applicationId} updated to ${status}`,
+      payload: {
+        applicationId,
+        userId: current.user_id,
+        previousStatus: current.status,
+        status
+      }
+    });
+
+    const notify = await notifyTelegramUser(
+      current.user_id,
+      buildIndustryApplicationStatusMessage(
+        { id: current.id, opportunity_title: current.opportunity_title },
+        status
+      ),
+      {
+        source: "industry-application-status",
+        applicationId,
+        previousStatus: current.status,
+        status
+      }
+    );
+
+    res.json({ application: updated.rows[0], notify });
   } catch (error) {
     next(error);
   }
@@ -1696,6 +1960,17 @@ router.patch("/content/:contentId/publish", async (req, res, next) => {
   try {
     const contentId = Number(req.params.contentId);
     const isPublished = String(req.body?.isPublished || "true").toLowerCase() === "true";
+
+    const beforeRes = await query(
+      `SELECT id, title, created_by_user_id, is_published
+       FROM contents
+       WHERE id = $1
+       LIMIT 1`,
+      [contentId]
+    );
+    if (!beforeRes.rows.length) return res.status(404).json({ error: "Content not found" });
+    const before = beforeRes.rows[0];
+
     const updated = await query(
       `UPDATE contents
        SET is_published = $1
@@ -1705,7 +1980,25 @@ router.patch("/content/:contentId/publish", async (req, res, next) => {
     );
 
     if (!updated.rows.length) return res.status(404).json({ error: "Content not found" });
-    res.json({ content: updated.rows[0] });
+
+    const notifyText = [
+      "Fanjobo content status update",
+      "",
+      `Content #${contentId}`,
+      `Title: ${before.title || "-"}`,
+      `Published: ${isPublished ? "Yes" : "No"}`,
+      "",
+      "Open the bot University/Industry panel for latest content."
+    ].join("\n");
+
+    const notify = await notifyTelegramUser(before.created_by_user_id, notifyText, {
+      source: "content-publish-status",
+      contentId,
+      previousPublished: Boolean(before.is_published),
+      isPublished
+    });
+
+    res.json({ content: updated.rows[0], notify });
   } catch (error) {
     next(error);
   }
