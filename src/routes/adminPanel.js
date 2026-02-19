@@ -1020,7 +1020,7 @@ router.get("/users/:userId", async (req, res, next) => {
               p.portfolio_url,
               p.skills,
               p.passed_courses,
-              p.created_at AS profile_created_at,
+              p.updated_at AS profile_created_at,
               p.updated_at AS profile_updated_at
        FROM users u
        LEFT JOIN user_profiles p ON p.user_id = u.id
