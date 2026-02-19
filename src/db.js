@@ -62,6 +62,43 @@ function getDbProvider() {
   return "sqlite";
 }
 
+function normalizeRailwayPostgresUrl(rawUrl) {
+  if (!rawUrl) return "";
+
+  try {
+    const parsed = new URL(String(rawUrl));
+    const host = parsed.hostname;
+    const isRailway = Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT);
+    const isSimpleHost = /^[a-z0-9-]+$/i.test(host);
+
+    if (isRailway && isSimpleHost && host !== "localhost") {
+      parsed.hostname = `${host}.railway.internal`;
+      return parsed.toString();
+    }
+
+    return parsed.toString();
+  } catch (_error) {
+    return String(rawUrl);
+  }
+}
+
+function resolvePostgresConnectionString() {
+  const direct = String(config.databaseUrl || "").trim();
+  if (direct) return normalizeRailwayPostgresUrl(direct);
+
+  const host = String(process.env.PGHOST || "").trim();
+  const port = String(process.env.PGPORT || "5432").trim();
+  const user = String(process.env.PGUSER || "").trim();
+  const password = String(process.env.PGPASSWORD || "").trim();
+  const database = String(process.env.PGDATABASE || "").trim();
+
+  if (!host || !user || !database) return "";
+
+  const auth = `${encodeURIComponent(user)}:${encodeURIComponent(password)}`;
+  const built = `postgresql://${auth}@${host}:${port}/${database}`;
+  return normalizeRailwayPostgresUrl(built);
+}
+
 function resolveSqliteFile() {
   const fromDatabaseUrl = normalizeSqlitePath(config.databaseUrl);
   const configured = fromDatabaseUrl || config.sqlitePath || "db/fanjobo.db";
@@ -101,11 +138,16 @@ function normalizeSqliteRow(row) {
 }
 
 const dbProvider = getDbProvider();
+const postgresConnectionString = dbProvider === "postgres" ? resolvePostgresConnectionString() : "";
+
+if (dbProvider === "postgres" && !postgresConnectionString) {
+  throw new Error("Postgres is selected but no DATABASE_URL/PG* credentials are configured.");
+}
 
 const pool = dbProvider === "postgres"
   ? new Pool({
-      connectionString: config.databaseUrl,
-      ssl: config.databaseUrl.includes("localhost")
+      connectionString: postgresConnectionString,
+      ssl: postgresConnectionString.includes("localhost")
         ? false
         : { rejectUnauthorized: false }
     })
