@@ -434,8 +434,44 @@ async function loadUserAcademicProfile(ctx) {
 
 async function getUniversityItemsByKind({ major, term, kind, limit = 5 }) {
   const res = await query(
-    `SELECT title
-     FROM contents
+    `SELECT c.id, c.title, c.description,
+            (
+              SELECT cf.drive_link
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_link,
+            (
+              SELECT cf.drive_file_id
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_file_id,
+            (
+              SELECT s.external_link
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = c.kind
+                AND s.title = c.title
+                AND s.user_id = c.created_by_user_id
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_external_link,
+            (
+              SELECT s.tags
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = c.kind
+                AND s.title = c.title
+                AND s.user_id = c.created_by_user_id
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_tags
+     FROM contents c
      WHERE type = 'university'
        AND kind = $1
        AND is_published = TRUE
@@ -449,9 +485,41 @@ async function getUniversityItemsByKind({ major, term, kind, limit = 5 }) {
   return res.rows;
 }
 
+function extractDriveFileIdFromTags(tags) {
+  if (!Array.isArray(tags)) return null;
+  const entry = tags.find((item) => String(item || "").startsWith("_drive_file_id:"));
+  if (!entry) return null;
+  return String(entry).replace("_drive_file_id:", "").trim() || null;
+}
+
+function buildDriveDownloadLink(fileId) {
+  if (!fileId) return null;
+  return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
+}
+
+function resolveItemDownloadLink(item) {
+  const byFileId = item.drive_file_id || extractDriveFileIdFromTags(item.submission_tags);
+  if (byFileId) return buildDriveDownloadLink(byFileId);
+  if (item.drive_link) return item.drive_link;
+  if (item.submission_external_link) return item.submission_external_link;
+  return null;
+}
+
 function formatList(items) {
   if (!items.length) return "موردی ثبت نشده.";
-  return items.map((item, index) => `${index + 1}. ${item.title}`).join("\n");
+  return items
+    .map((item, index) => {
+      const rows = [`${index + 1}. ${item.title}`];
+      const downloadLink = resolveItemDownloadLink(item);
+      if (downloadLink) {
+        rows.push(`دانلود: ${downloadLink}`);
+      } else {
+        rows.push("فایل برای دانلود ثبت نشده.");
+      }
+
+      return rows.join("\n");
+    })
+    .join("\n\n");
 }
 
 async function showUniversityKind(ctx, kind, title) {

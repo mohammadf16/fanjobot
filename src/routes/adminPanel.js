@@ -1315,6 +1315,9 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
 
     if (action === "approve") {
       const driveMeta = extractDriveMetaFromTags(submission.tags);
+      const resolvedDriveLink =
+        submission.external_link ||
+        (driveMeta.driveFileId ? `https://drive.google.com/file/d/${driveMeta.driveFileId}/view` : null);
 
       const insertedContent = await query(
         `INSERT INTO contents
@@ -1333,7 +1336,7 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
         ]
       );
 
-      if (submission.external_link) {
+      if (resolvedDriveLink || driveMeta.driveFileId) {
         await query(
           `INSERT INTO content_files
            (content_id, drive_file_id, drive_link, mime_type)
@@ -1341,7 +1344,7 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
           [
             insertedContent.rows[0].id,
             driveMeta.driveFileId || `community-${submission.id}`,
-            submission.external_link,
+            resolvedDriveLink,
             driveMeta.mimeType
           ]
         );
