@@ -20,6 +20,8 @@ const submissionSessions = new Map();
 const pathSessions = new Map();
 const supportTicketSessions = new Map();
 const supportActionSessions = new Map();
+const industryActionSessions = new Map();
+const adminActionSessions = new Map();
 const bookDownloadLocks = new Map();
 
 const BOOK_CACHE_DIR = path.join(process.cwd(), "tmp", "telegram-book-cache");
@@ -42,15 +44,47 @@ const ADMIN_MENU_STATS = "📊 آمار سریع";
 const ADMIN_MENU_TICKETS = "🎫 تیکت های باز";
 const ADMIN_MENU_NOTIFS = "📬 نوتیف های باز";
 const ADMIN_MENU_STARTED = "👥 کاربران استارت کرده";
+const ADMIN_MENU_SUBMISSIONS = "🗂️ تایید/رد آپلودها";
 const ADMIN_MENU_HELP = "🧾 راهنمای ادمین";
+const ADMIN_SUBMISSIONS_DETAIL = "🔎 جزئیات ارسال";
+const ADMIN_SUBMISSIONS_APPROVE = "✅ تایید ارسال";
+const ADMIN_SUBMISSIONS_REJECT = "❌ رد ارسال";
+const ADMIN_SUBMISSIONS_PREV = "⬅️ قبلی";
+const ADMIN_SUBMISSIONS_NEXT = "بعدی ➡️";
+const ADMIN_SUBMISSIONS_REFRESH = "🔄 بروزرسانی صف";
+const ADMIN_SUBMISSIONS_BACK = "🔙 بازگشت به پنل ادمین";
 const SUPPORT_MENU_NEW = "📝 ثبت تیکت جدید";
 const SUPPORT_MENU_MY = "📂 تیکت های من";
 const SUPPORT_MENU_DETAIL = "🔎 مشاهده تیکت با شماره";
 const SUPPORT_MENU_REPLY = "✉️ پاسخ به تیکت";
 const SUPPORT_MENU_HELP = "🧾 راهنمای تیکت";
 const SUPPORT_MENU_BACK = "🔙 بازگشت از پشتیبانی";
+const INDUSTRY_PANEL_BACK = "🔙 بازگشت به پنل صنعت";
+const INDUSTRY_OPP_DETAIL = "🔎 جزئیات فرصت";
+const INDUSTRY_OPP_APPLY = "✅ درخواست فرصت";
+const INDUSTRY_OPP_SAVE = "⭐ ذخیره فرصت";
+const INDUSTRY_OPP_PREV = "⬅️ قبلی فرصت ها";
+const INDUSTRY_OPP_NEXT = "بعدی فرصت ها ➡️";
+const INDUSTRY_OPP_REFRESH = "🔄 بروزرسانی فرصت ها";
+const INDUSTRY_PROJECT_DETAIL = "🔎 جزئیات پروژه";
+const INDUSTRY_PROJECT_START = "🚀 شروع پروژه";
+const INDUSTRY_PROJECT_PREV = "⬅️ قبلی پروژه ها";
+const INDUSTRY_PROJECT_NEXT = "بعدی پروژه ها ➡️";
+const INDUSTRY_PROJECT_REFRESH = "🔄 بروزرسانی پروژه ها";
+const INDUSTRY_TRACK_NOTE = "📝 یادداشت درخواست";
+const INDUSTRY_TRACK_FOLLOW = "📌 پیگیری فرصت ذخیره شده";
+const INDUSTRY_TRACK_REFRESH = "🔄 بروزرسانی پیگیری";
+const INDUSTRY_WORK_PROGRESS = "📈 ثبت پیشرفت";
+const INDUSTRY_WORK_LINK = "🔗 ثبت لینک خروجی";
+const INDUSTRY_WORK_REFRESH = "🔄 بروزرسانی اجرای پروژه";
+const INDUSTRY_RESOURCE_PREV = "⬅️ قبلی منابع";
+const INDUSTRY_RESOURCE_NEXT = "بعدی منابع ➡️";
+const INDUSTRY_RESOURCE_REFRESH = "🔄 بروزرسانی منابع";
+const INDUSTRY_STATIC_REFRESH = "🔄 بروزرسانی ماژول";
 const STATIC_ADMIN_TELEGRAM_IDS = new Set(["565136808"]);
 const STATIC_ADMIN_USERNAMES = new Set(["immohammadf"]);
+const INDUSTRY_PANEL_PAGE_SIZE = 5;
+const ADMIN_SUBMISSIONS_PAGE_SIZE = 5;
 
 const MAJOR_FAMILIES = [
   "مهندسی صنایع",
@@ -271,6 +305,7 @@ function adminPanelMenu() {
   return Markup.keyboard([
     [ADMIN_MENU_STATS, ADMIN_MENU_TICKETS],
     [ADMIN_MENU_NOTIFS, ADMIN_MENU_STARTED],
+    [ADMIN_MENU_SUBMISSIONS],
     [ADMIN_MENU_HELP],
     [ADMIN_MENU_BACK]
   ]).resize();
@@ -289,6 +324,66 @@ function supportMenu(ctx) {
   }
 
   return Markup.keyboard(rows).resize();
+}
+
+function industryOpportunityPanelMenu() {
+  return Markup.keyboard([
+    [INDUSTRY_OPP_DETAIL, INDUSTRY_OPP_APPLY],
+    [INDUSTRY_OPP_SAVE],
+    [INDUSTRY_OPP_PREV, INDUSTRY_OPP_NEXT],
+    [INDUSTRY_OPP_REFRESH],
+    [INDUSTRY_PANEL_BACK]
+  ]).resize();
+}
+
+function industryProjectPanelMenu() {
+  return Markup.keyboard([
+    [INDUSTRY_PROJECT_DETAIL, INDUSTRY_PROJECT_START],
+    [INDUSTRY_PROJECT_PREV, INDUSTRY_PROJECT_NEXT],
+    [INDUSTRY_PROJECT_REFRESH],
+    [INDUSTRY_PANEL_BACK]
+  ]).resize();
+}
+
+function industryTrackerPanelMenu() {
+  return Markup.keyboard([
+    [INDUSTRY_TRACK_NOTE, INDUSTRY_TRACK_FOLLOW],
+    [INDUSTRY_TRACK_REFRESH],
+    [INDUSTRY_PANEL_BACK]
+  ]).resize();
+}
+
+function industryWorkspacePanelMenu() {
+  return Markup.keyboard([
+    [INDUSTRY_WORK_PROGRESS, INDUSTRY_WORK_LINK],
+    [INDUSTRY_WORK_REFRESH],
+    [INDUSTRY_PANEL_BACK]
+  ]).resize();
+}
+
+function industryResourcesPanelMenu() {
+  return Markup.keyboard([
+    [INDUSTRY_RESOURCE_PREV, INDUSTRY_RESOURCE_NEXT],
+    [INDUSTRY_RESOURCE_REFRESH],
+    [INDUSTRY_PANEL_BACK]
+  ]).resize();
+}
+
+function industryStaticModuleMenu() {
+  return Markup.keyboard([
+    [INDUSTRY_STATIC_REFRESH],
+    [INDUSTRY_PANEL_BACK]
+  ]).resize();
+}
+
+function adminSubmissionsPanelMenu() {
+  return Markup.keyboard([
+    [ADMIN_SUBMISSIONS_DETAIL, ADMIN_SUBMISSIONS_APPROVE],
+    [ADMIN_SUBMISSIONS_REJECT],
+    [ADMIN_SUBMISSIONS_PREV, ADMIN_SUBMISSIONS_NEXT],
+    [ADMIN_SUBMISSIONS_REFRESH],
+    [ADMIN_SUBMISSIONS_BACK]
+  ]).resize();
 }
 
 function buildWebhookPath() {
@@ -1632,6 +1727,128 @@ async function handleSupportPanelInput(ctx) {
   return false;
 }
 
+async function handleIndustryPanelInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = industryActionSessions.get(key);
+  if (!session) return false;
+
+  const text = String(ctx.message?.text || "").trim();
+  if (!text) return false;
+
+  if (text === INDUSTRY_PANEL_BACK || text === UNI_MENU_BACK) {
+    clearIndustrySession(ctx);
+    await ctx.reply("از پنل صنعت خارج شدی.", industryMenu());
+    return true;
+  }
+
+  if (text === "لغو") {
+    clearIndustrySession(ctx);
+    await ctx.reply("عملیات صنعت لغو شد.", industryMenu());
+    return true;
+  }
+
+  if (session.mode === "opportunity-await-detail") {
+    const opportunityId = Number(text);
+    if (!Number.isInteger(opportunityId) || opportunityId < 1) {
+      await ctx.reply("شناسه فرصت نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    await showOpportunityDetailsById(ctx, opportunityId);
+    await showIndustryOpportunitiesPanel(ctx, session.panelType || "board", session.page || 0);
+    return true;
+  }
+
+  if (session.mode === "opportunity-await-apply") {
+    const opportunityId = Number(text);
+    if (!Number.isInteger(opportunityId) || opportunityId < 1) {
+      await ctx.reply("شناسه فرصت نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    await applyOpportunityById(ctx, opportunityId);
+    await showIndustryOpportunitiesPanel(ctx, session.panelType || "board", session.page || 0);
+    return true;
+  }
+
+  if (session.mode === "opportunity-await-save") {
+    const opportunityId = Number(text);
+    if (!Number.isInteger(opportunityId) || opportunityId < 1) {
+      await ctx.reply("شناسه فرصت نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    await saveOpportunityById(ctx, opportunityId);
+    await showIndustryOpportunitiesPanel(ctx, session.panelType || "board", session.page || 0);
+    return true;
+  }
+
+  if (session.mode === "project-await-detail") {
+    const projectId = Number(text);
+    if (!Number.isInteger(projectId) || projectId < 1) {
+      await ctx.reply("شناسه پروژه نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    await showProjectDetailsById(ctx, projectId);
+    await showIndustryProjectsPanel(ctx, session.page || 0);
+    return true;
+  }
+
+  if (session.mode === "project-await-start") {
+    const projectId = Number(text);
+    if (!Number.isInteger(projectId) || projectId < 1) {
+      await ctx.reply("شناسه پروژه نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    await startStudentProjectById(ctx, projectId);
+    await showIndustryProjectsPanel(ctx, session.page || 0);
+    return true;
+  }
+
+  if (session.mode === "tracker-await-note") {
+    const match = text.match(/^(\d+)\s*[:：]\s*(.+)$/);
+    if (!match) {
+      await ctx.reply("فرمت درست: <applicationId>: <متن یادداشت>");
+      return true;
+    }
+    await addApplicationNote(ctx, Number(match[1]), String(match[2] || "").trim());
+    await showIndustryTrackerPanel(ctx);
+    return true;
+  }
+
+  if (session.mode === "tracker-await-follow") {
+    const match = text.match(/^(\d+)\s*[:：]\s*(.+)$/);
+    if (!match) {
+      await ctx.reply("فرمت درست: <opportunityId>: <متن پیگیری>");
+      return true;
+    }
+    await addSavedOpportunityFollowUp(ctx, Number(match[1]), String(match[2] || "").trim());
+    await showIndustryTrackerPanel(ctx);
+    return true;
+  }
+
+  if (session.mode === "workspace-await-progress") {
+    const match = text.match(/^(\d+)\s+(\d{1,3})$/);
+    if (!match) {
+      await ctx.reply("فرمت درست: <studentProjectId> <0-100>");
+      return true;
+    }
+    await updateStudentProjectProgress(ctx, Number(match[1]), Number(match[2]));
+    await showIndustryWorkspacePanel(ctx);
+    return true;
+  }
+
+  if (session.mode === "workspace-await-link") {
+    const match = text.match(/^(\d+)\s+(\S+)$/);
+    if (!match) {
+      await ctx.reply("فرمت درست: <studentProjectId> <url>");
+      return true;
+    }
+    await addStudentProjectLink(ctx, Number(match[1]), String(match[2] || "").trim());
+    await showIndustryWorkspacePanel(ctx);
+    return true;
+  }
+
+  return false;
+}
+
 async function saveSupportTicketFromBot(session, messageText) {
   const insertedTicket = await query(
     `INSERT INTO support_tickets
@@ -1773,6 +1990,7 @@ async function ensureSupportAdminAccess(ctx) {
 
 async function showAdminBotPanel(ctx) {
   if (!(await ensureSupportAdminAccess(ctx))) return;
+  clearAdminSession(ctx);
   await ctx.reply(
     "پنل ادمین بات فعال شد.\nاز گزینه های زیر برای مدیریت سریع استفاده کن.",
     adminPanelMenu()
@@ -1862,8 +2080,199 @@ async function showAdminHelpFromBot(ctx) {
       "/tickets -> لیست تیکت های باز\n" +
       "/ticket <id> -> جزئیات یک تیکت\n" +
       "/replyticket <id> <متن> -> پاسخ تیکت\n" +
-      "/closeticket <id> -> بستن تیکت"
+      "/closeticket <id> -> بستن تیکت\n" +
+      "/submissions -> صف تایید آپلودها\n" +
+      "/approve <id> -> تایید ارسال\n" +
+      "/reject <id> <دلیل> -> رد ارسال"
   );
+}
+
+function adminPanelAuthHeaders(ctx) {
+  const adminId = String(config.adminUserId || ctx.from?.id || "").trim();
+  const adminKey = String(config.adminApiKey || "").trim();
+  return {
+    "x-admin-id": adminId,
+    "x-admin-key": adminKey
+  };
+}
+
+function adminPanelApiBaseUrl() {
+  return `http://127.0.0.1:${config.port}`;
+}
+
+async function adminPanelApiRequest(ctx, pathname, { method = "GET", body } = {}) {
+  const adminKey = String(config.adminApiKey || "").trim();
+  if (!adminKey) {
+    throw new Error("ADMIN_API_KEY تنظیم نشده است.");
+  }
+
+  if (typeof fetch !== "function") {
+    throw new Error("Runtime fetch is unavailable");
+  }
+
+  const url = `${adminPanelApiBaseUrl()}${pathname}`;
+  const headers = {
+    ...adminPanelAuthHeaders(ctx),
+    "content-type": "application/json"
+  };
+
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || `Admin API failed (${response.status})`);
+  }
+
+  return data;
+}
+
+function getAdminSession(ctx) {
+  return adminActionSessions.get(getSessionKey(ctx)) || null;
+}
+
+function setAdminSession(ctx, nextSession) {
+  adminActionSessions.set(getSessionKey(ctx), nextSession);
+}
+
+function clearAdminSession(ctx) {
+  adminActionSessions.delete(getSessionKey(ctx));
+}
+
+async function showAdminSubmissionQueuePanel(ctx, requestedPage = 0) {
+  if (!(await ensureSupportAdminAccess(ctx))) return;
+  try {
+    const page = Math.max(0, Number(requestedPage) || 0);
+    const offset = page * ADMIN_SUBMISSIONS_PAGE_SIZE;
+    const data = await adminPanelApiRequest(
+      ctx,
+      `/api/admin/moderation/submissions?status=pending&limit=${ADMIN_SUBMISSIONS_PAGE_SIZE}&offset=${offset}`
+    );
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    const total = Number(data.total || 0);
+    const { safePage, totalPages } = clampPage(page, total, ADMIN_SUBMISSIONS_PAGE_SIZE);
+
+    if (!items.length) {
+      await ctx.reply("ارسالی در انتظار تایید وجود ندارد.", adminSubmissionsPanelMenu());
+      setAdminSession(ctx, { mode: "admin-submissions", page: safePage, totalPages });
+      return;
+    }
+
+    const lines = items
+      .map(
+        (item, idx) =>
+          `${safePage * ADMIN_SUBMISSIONS_PAGE_SIZE + idx + 1}. #${item.id} ${item.title}\n` +
+          `${item.section || "-"} / ${item.content_kind || "-"} | user #${item.user_id} | ${item.status}`
+      )
+      .join("\n\n");
+
+    await ctx.reply(
+      `🗂️ صف تایید محتوای آپلودی\nنتیجه: ${total} مورد | صفحه ${safePage + 1} از ${totalPages}\n\n${lines}\n\n` +
+        "برای تایید/رد از دکمه ها استفاده کن.",
+      adminSubmissionsPanelMenu()
+    );
+
+    setAdminSession(ctx, { mode: "admin-submissions", page: safePage, totalPages });
+  } catch (error) {
+    logError("Admin submission queue panel failed", {
+      error: error?.message || String(error),
+      telegramId: String(ctx.from?.id || "")
+    });
+    await ctx.reply(`بارگذاری صف انجام نشد: ${error?.message || "خطای نامشخص"}`, adminPanelMenu());
+  }
+}
+
+async function showAdminSubmissionDetailById(ctx, submissionId) {
+  if (!(await ensureSupportAdminAccess(ctx))) return;
+  try {
+    const data = await adminPanelApiRequest(ctx, `/api/admin/moderation/submissions/${submissionId}`);
+    const s = data.submission || {};
+    const text = [
+      `ارسال #${s.id || submissionId}`,
+      `وضعیت: ${s.status || "-"}`,
+      `بخش/نوع: ${s.section || "-"} / ${s.content_kind || "-"}`,
+      `عنوان: ${s.title || "-"}`,
+      `کاربر: #${s.user_id || "-"}`,
+      `درس: ${s.course_name || "-"}`,
+      `استاد: ${s.professor_name || "-"}`,
+      `لینک فایل: ${s.external_link || "-"}`,
+      `توضیح: ${s.description || "-"}`,
+      `تگ ها: ${Array.isArray(s.tags) ? s.tags.join(", ") : "-"}`
+    ].join("\n");
+    await ctx.reply(text, adminSubmissionsPanelMenu());
+  } catch (error) {
+    await ctx.reply(`جزئیات ارسال خوانده نشد: ${error?.message || "خطای نامشخص"}`, adminSubmissionsPanelMenu());
+  }
+}
+
+async function reviewAdminSubmissionById(ctx, submissionId, action, reason = null) {
+  if (!(await ensureSupportAdminAccess(ctx))) return;
+  try {
+    const payload = action === "reject" ? { action, reason } : { action };
+    const result = await adminPanelApiRequest(
+      ctx,
+      `/api/admin/moderation/submissions/${submissionId}/review`,
+      { method: "POST", body: payload }
+    );
+    const delivered = result?.notify?.delivered ? "ارسال شد" : "ارسال نشد";
+    await ctx.reply(`ارسال #${submissionId} ${action === "approve" ? "تایید" : "رد"} شد.\nنوتیف کاربر: ${delivered}`);
+  } catch (error) {
+    await ctx.reply(`عملیات روی ارسال #${submissionId} انجام نشد: ${error?.message || "خطای نامشخص"}`);
+  }
+}
+
+async function handleAdminPanelInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = adminActionSessions.get(key);
+  if (!session) return false;
+
+  const text = String(ctx.message?.text || "").trim();
+  if (!text) return false;
+
+  if (text === "لغو" || text === ADMIN_SUBMISSIONS_BACK) {
+    clearAdminSession(ctx);
+    await showAdminBotPanel(ctx);
+    return true;
+  }
+
+  if (session.mode === "admin-submissions-await-detail") {
+    const submissionId = Number(text);
+    if (!Number.isInteger(submissionId) || submissionId < 1) {
+      await ctx.reply("شناسه ارسال نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    await showAdminSubmissionDetailById(ctx, submissionId);
+    await showAdminSubmissionQueuePanel(ctx, session.page || 0);
+    return true;
+  }
+
+  if (session.mode === "admin-submissions-await-approve") {
+    const submissionId = Number(text);
+    if (!Number.isInteger(submissionId) || submissionId < 1) {
+      await ctx.reply("شناسه ارسال نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    await reviewAdminSubmissionById(ctx, submissionId, "approve");
+    await showAdminSubmissionQueuePanel(ctx, session.page || 0);
+    return true;
+  }
+
+  if (session.mode === "admin-submissions-await-reject") {
+    const match = text.match(/^(\d+)\s*[:：]\s*(.+)$/);
+    if (!match) {
+      await ctx.reply("فرمت درست: <submissionId>: <دلیل رد>");
+      return true;
+    }
+    await reviewAdminSubmissionById(ctx, Number(match[1]), "reject", String(match[2] || "").trim());
+    await showAdminSubmissionQueuePanel(ctx, session.page || 0);
+    return true;
+  }
+
+  return false;
 }
 
 function formatSupportTicketRow(item) {
@@ -2236,6 +2645,244 @@ async function listOpenProjects(limit = 40) {
     [limit]
   );
   return rows.rows;
+}
+
+function getIndustrySession(ctx) {
+  return industryActionSessions.get(getSessionKey(ctx)) || null;
+}
+
+function setIndustrySession(ctx, nextSession) {
+  industryActionSessions.set(getSessionKey(ctx), nextSession);
+}
+
+function clearIndustrySession(ctx) {
+  industryActionSessions.delete(getSessionKey(ctx));
+}
+
+function clampPage(page, totalItems, pageSize = INDUSTRY_PANEL_PAGE_SIZE) {
+  const totalPages = Math.max(1, Math.ceil(Math.max(0, Number(totalItems || 0)) / pageSize));
+  const safePage = clampInt(page, 0, totalPages - 1);
+  return { safePage, totalPages };
+}
+
+async function showIndustryOpportunitiesPanel(ctx, panelType = "board", requestedPage = 0) {
+  const { profile, context } = await loadIndustryContext(ctx);
+  if (panelType === "recommender" && !profile) {
+    await ctx.reply("برای پیشنهاد شخصی، اول «تکمیل پروفایل» را انجام بده.", industryMenu());
+    return;
+  }
+
+  const opportunities = await listOpenOpportunities(140);
+  if (!opportunities.length) {
+    await ctx.reply("در حال حاضر فرصت باز برای نمایش وجود ندارد.", industryMenu());
+    clearIndustrySession(ctx);
+    return;
+  }
+
+  const ranked = profile
+    ? opportunities
+        .map((item) => ({ ...item, matchScore: scoreOpportunity(item, context) }))
+        .sort((a, b) => b.matchScore - a.matchScore)
+    : opportunities;
+
+  const source = panelType === "recommender" ? ranked.slice(0, 40) : ranked;
+  const { safePage, totalPages } = clampPage(requestedPage, source.length);
+  const start = safePage * INDUSTRY_PANEL_PAGE_SIZE;
+  const pageItems = source.slice(start, start + INDUSTRY_PANEL_PAGE_SIZE);
+
+  const title = panelType === "recommender" ? "ماژول 2 - پیشنهاد فرصت ها" : "ماژول 3 - برد فرصت ها";
+  const lines = pageItems.map((item, index) => {
+    const rank = start + index + 1;
+    const scoreText = profile ? ` | امتیاز ${item.matchScore}` : "";
+    const reasonText = panelType === "recommender" && profile
+      ? `\nدلیل: ${buildOpportunityReason(item, profile, context)}`
+      : "";
+    return (
+      `${rank}. #${item.id} ${item.title}` +
+      ` | ${formatOpportunityType(item.opportunity_type)}` +
+      ` | ${item.level}` +
+      ` | ${formatLocation(item.location_mode, item.city)}` +
+      ` | ${toFaDate(item.deadline_at)}` +
+      `${scoreText}${reasonText}`
+    );
+  }).join("\n\n");
+
+  await ctx.reply(
+    `${title}\nنتیجه: ${source.length} مورد | صفحه ${safePage + 1} از ${totalPages}\n\n${lines}\n\n` +
+      `برای اجرای عملیات از دکمه های زیر استفاده کن.`,
+    industryOpportunityPanelMenu()
+  );
+
+  setIndustrySession(ctx, { mode: "opportunities", panelType, page: safePage, totalPages });
+}
+
+async function showIndustryProjectsPanel(ctx, requestedPage = 0) {
+  const { profile, context } = await loadIndustryContext(ctx);
+  const projects = await listOpenProjects(140);
+  if (!projects.length) {
+    await ctx.reply("فعلا پروژه باز برای نمایش نداریم.", industryMenu());
+    clearIndustrySession(ctx);
+    return;
+  }
+
+  const ranked = profile
+    ? projects
+        .map((item) => ({ ...item, matchScore: scoreProject(item, context) }))
+        .sort((a, b) => b.matchScore - a.matchScore)
+    : projects;
+
+  const { safePage, totalPages } = clampPage(requestedPage, ranked.length);
+  const start = safePage * INDUSTRY_PANEL_PAGE_SIZE;
+  const pageItems = ranked.slice(start, start + INDUSTRY_PANEL_PAGE_SIZE);
+
+  const lines = pageItems.map((item, index) => {
+    const rank = start + index + 1;
+    const scoreText = profile ? ` | امتیاز ${item.matchScore}` : "";
+    return (
+      `${rank}. #${item.id} ${item.title}` +
+      ` | ${formatProjectType(item.type)}` +
+      ` | ${item.level}` +
+      ` | ${item.estimated_hours || "?"}h` +
+      `${scoreText}`
+    );
+  }).join("\n");
+
+  await ctx.reply(
+    `ماژول 5 - هاب پروژه ها\nنتیجه: ${ranked.length} مورد | صفحه ${safePage + 1} از ${totalPages}\n\n${lines}\n\n` +
+      "برای جزئیات یا شروع پروژه از دکمه های زیر استفاده کن.",
+    industryProjectPanelMenu()
+  );
+
+  setIndustrySession(ctx, { mode: "projects", page: safePage, totalPages });
+}
+
+async function showIndustryTrackerPanel(ctx) {
+  const { userId } = await loadIndustryContext(ctx);
+  const appsRes = await query(
+    `SELECT a.id, a.status, a.updated_at, o.id AS opportunity_id, o.title AS opportunity_title
+     FROM industry_applications a
+     JOIN industry_opportunities o ON o.id = a.opportunity_id
+     WHERE a.user_id = $1
+     ORDER BY a.updated_at DESC
+     LIMIT 10`,
+    [userId]
+  );
+
+  const savedRes = await query(
+    `SELECT s.opportunity_id, s.follow_up_status, s.updated_at, o.title AS opportunity_title
+     FROM industry_saved_opportunities s
+     JOIN industry_opportunities o ON o.id = s.opportunity_id
+     WHERE s.user_id = $1
+     ORDER BY s.updated_at DESC
+     LIMIT 10`,
+    [userId]
+  );
+
+  const appsText = appsRes.rows.length
+    ? appsRes.rows
+        .map((item) => `#${item.id} | فرصت #${item.opportunity_id} ${item.opportunity_title} | ${formatApplicationStatus(item.status)}`)
+        .join("\n")
+    : "درخواستی ثبت نشده";
+
+  const savedText = savedRes.rows.length
+    ? savedRes.rows
+        .map((item) => `فرصت #${item.opportunity_id} ${item.opportunity_title} | ${item.follow_up_status || "saved"}`)
+        .join("\n")
+    : "مورد ذخیره شده ای نداری";
+
+  await ctx.reply(
+    `ماژول 4 - پیگیری درخواست ها\n\n` +
+      `درخواست ها:\n${appsText}\n\n` +
+      `فرصت های ذخیره شده:\n${savedText}\n\n` +
+      "برای ثبت یادداشت یا پیگیری، از دکمه های پنل استفاده کن.",
+    industryTrackerPanelMenu()
+  );
+
+  setIndustrySession(ctx, { mode: "tracker" });
+}
+
+async function showIndustryWorkspacePanel(ctx) {
+  const { userId } = await loadIndustryContext(ctx);
+  const rows = await query(
+    `SELECT sp.id, sp.project_id, sp.status, sp.progress, sp.output_links, p.title
+     FROM industry_student_projects sp
+     JOIN industry_projects p ON p.id = sp.project_id
+     WHERE sp.user_id = $1
+     ORDER BY sp.updated_at DESC
+     LIMIT 12`,
+    [userId]
+  );
+
+  const text = rows.rows.length
+    ? rows.rows
+        .map(
+          (item) =>
+            `#${item.id} | پروژه #${item.project_id} ${item.title} | ${item.progress}% | ${formatStudentProjectStatus(item.status)} | لینک: ${asArray(item.output_links).length}`
+        )
+        .join("\n")
+    : "فعلا پروژه فعالی نداری.";
+
+  await ctx.reply(
+    `ماژول 6 - اجرای پروژه\n\n${text}\n\n` +
+      "برای ثبت پیشرفت یا لینک خروجی، از دکمه های پنل استفاده کن.",
+    industryWorkspacePanelMenu()
+  );
+
+  setIndustrySession(ctx, { mode: "workspace" });
+}
+
+async function showIndustryResourcesPanel(ctx, requestedPage = 0) {
+  const { profile } = await loadIndustryContext(ctx);
+  const interests = asArray(profile?.interests).map((item) => normalizeSkillName(item)).filter(Boolean);
+
+  const contentsRes = await query(
+    `SELECT id, title, kind, tags
+     FROM contents
+     WHERE type = 'industry'
+       AND is_published = TRUE
+       AND kind IN ('resource', 'video', 'roadmap', 'project')
+     ORDER BY created_at DESC
+     LIMIT 120`
+  );
+
+  const ranked = contentsRes.rows
+    .map((item) => ({ item, score: contentMatchScore(item, interests) }))
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.item);
+
+  if (!ranked.length) {
+    await ctx.reply("منبع صنعتی منتشرشده ای نداریم.", industryMenu());
+    clearIndustrySession(ctx);
+    return;
+  }
+
+  const { safePage, totalPages } = clampPage(requestedPage, ranked.length);
+  const start = safePage * INDUSTRY_PANEL_PAGE_SIZE;
+  const pageItems = ranked.slice(start, start + INDUSTRY_PANEL_PAGE_SIZE);
+
+  const lines = pageItems
+    .map((item, index) => `${start + index + 1}. #${item.id} [${item.kind}] ${item.title}`)
+    .join("\n");
+
+  await ctx.reply(
+    `ماژول 8 - منابع صنعتی\nنتیجه: ${ranked.length} مورد | صفحه ${safePage + 1} از ${totalPages}\n\n${lines}`,
+    industryResourcesPanelMenu()
+  );
+
+  setIndustrySession(ctx, { mode: "resources", page: safePage, totalPages });
+}
+
+async function showIndustryStaticPanel(ctx, module) {
+  if (module === "profile") {
+    await showIndustryProfileModule(ctx);
+  } else if (module === "career") {
+    await showIndustryCareerPathModule(ctx);
+  } else {
+    await showIndustryHome(ctx);
+  }
+
+  await ctx.reply("پنل ماژول فعال شد.", industryStaticModuleMenu());
+  setIndustrySession(ctx, { mode: "static", module });
 }
 
 async function showIndustryHome(ctx) {
@@ -3891,6 +4538,28 @@ const menuLabelAliases = new Map([
   ["🛠️ اجرای پروژه", "اجرای پروژه"],
   ["🗺️ مسیر شغلی", "مسیر شغلی"],
   ["🎓 منابع صنعتی", "منابع صنعتی"],
+  [INDUSTRY_PANEL_BACK, "بازگشت به پنل صنعت"],
+  [INDUSTRY_OPP_DETAIL, "جزئیات فرصت"],
+  [INDUSTRY_OPP_APPLY, "درخواست فرصت"],
+  [INDUSTRY_OPP_SAVE, "ذخیره فرصت"],
+  [INDUSTRY_OPP_PREV, "قبلی فرصت ها"],
+  [INDUSTRY_OPP_NEXT, "بعدی فرصت ها"],
+  [INDUSTRY_OPP_REFRESH, "بروزرسانی فرصت ها"],
+  [INDUSTRY_PROJECT_DETAIL, "جزئیات پروژه"],
+  [INDUSTRY_PROJECT_START, "شروع پروژه"],
+  [INDUSTRY_PROJECT_PREV, "قبلی پروژه ها"],
+  [INDUSTRY_PROJECT_NEXT, "بعدی پروژه ها"],
+  [INDUSTRY_PROJECT_REFRESH, "بروزرسانی پروژه ها"],
+  [INDUSTRY_TRACK_NOTE, "یادداشت درخواست"],
+  [INDUSTRY_TRACK_FOLLOW, "پیگیری فرصت ذخیره شده"],
+  [INDUSTRY_TRACK_REFRESH, "بروزرسانی پیگیری"],
+  [INDUSTRY_WORK_PROGRESS, "ثبت پیشرفت"],
+  [INDUSTRY_WORK_LINK, "ثبت لینک خروجی"],
+  [INDUSTRY_WORK_REFRESH, "بروزرسانی اجرای پروژه"],
+  [INDUSTRY_RESOURCE_PREV, "قبلی منابع"],
+  [INDUSTRY_RESOURCE_NEXT, "بعدی منابع"],
+  [INDUSTRY_RESOURCE_REFRESH, "بروزرسانی منابع"],
+  [INDUSTRY_STATIC_REFRESH, "بروزرسانی ماژول"],
   ["📍 خلاصه مسیر", "خلاصه مسیر"],
   ["خلاصه مسیر", "📍 خلاصه مسیر"],
   ["⚙️ آنبوردینگ مسیر", "آنبوردینگ مسیر"],
@@ -3931,8 +4600,16 @@ const menuLabelAliases = new Map([
   ["نوتیف های باز", ADMIN_MENU_NOTIFS],
   [ADMIN_MENU_STARTED, "کاربران استارت کرده"],
   ["کاربران استارت کرده", ADMIN_MENU_STARTED],
+  [ADMIN_MENU_SUBMISSIONS, "تایید/رد آپلودها"],
   [ADMIN_MENU_HELP, "راهنمای ادمین"],
   ["راهنمای ادمین", ADMIN_MENU_HELP],
+  [ADMIN_SUBMISSIONS_DETAIL, "جزئیات ارسال"],
+  [ADMIN_SUBMISSIONS_APPROVE, "تایید ارسال"],
+  [ADMIN_SUBMISSIONS_REJECT, "رد ارسال"],
+  [ADMIN_SUBMISSIONS_PREV, "قبلی صف تایید"],
+  [ADMIN_SUBMISSIONS_NEXT, "بعدی صف تایید"],
+  [ADMIN_SUBMISSIONS_REFRESH, "بروزرسانی صف"],
+  [ADMIN_SUBMISSIONS_BACK, "بازگشت به پنل ادمین"],
   [SUPPORT_MENU_NEW, "ثبت تیکت جدید"],
   ["ثبت تیکت جدید", SUPPORT_MENU_NEW],
   [SUPPORT_MENU_MY, "تیکت های من"],
@@ -4042,6 +4719,16 @@ async function handleProfileWizardInput(ctx) {
     "اجرای پروژه",
     "مسیر شغلی",
     "منابع صنعتی",
+    "جزئیات فرصت",
+    "درخواست فرصت",
+    "ذخیره فرصت",
+    "جزئیات پروژه",
+    "شروع پروژه",
+    "ثبت پیشرفت",
+    "ثبت لینک خروجی",
+    "یادداشت درخواست",
+    "پیگیری فرصت ذخیره شده",
+    "بازگشت به پنل صنعت",
     "خلاصه مسیر",
     "آنبوردینگ مسیر",
     "هدف های فعال",
@@ -4306,6 +4993,12 @@ function registerHandlers(bot) {
       ctx.message.text = normalizeMenuText(ctx.message.text);
     }
 
+    const handledAdminPanel = await handleAdminPanelInput(ctx);
+    if (handledAdminPanel) return;
+
+    const handledIndustryPanel = await handleIndustryPanelInput(ctx);
+    if (handledIndustryPanel) return;
+
     const handledSupportPanel = await handleSupportPanelInput(ctx);
     if (handledSupportPanel) return;
 
@@ -4333,6 +5026,8 @@ function registerHandlers(bot) {
   });
 
   bot.hears("شروع", async (ctx) => {
+    clearIndustrySession(ctx);
+    clearAdminSession(ctx);
     await ctx.reply("🚀 منو آماده است.", mainMenuForContext(ctx));
   });
 
@@ -4345,6 +5040,7 @@ function registerHandlers(bot) {
   });
 
   bot.hears("دانشگاه", async (ctx) => {
+    clearIndustrySession(ctx);
     const { major, term } = await loadUserAcademicProfile(ctx);
 
     if (!major) {
@@ -4391,42 +5087,180 @@ function registerHandlers(bot) {
   });
 
   bot.hears("صنعت", async (ctx) => {
+    clearIndustrySession(ctx);
     await showIndustryHome(ctx);
   });
 
   bot.hears("پروفایل صنعتی", async (ctx) => {
-    await showIndustryProfileModule(ctx);
+    await showIndustryStaticPanel(ctx, "profile");
   });
 
   bot.hears("پیشنهاد فرصت ها", async (ctx) => {
-    await showIndustryRecommenderModule(ctx);
+    await showIndustryOpportunitiesPanel(ctx, "recommender", 0);
   });
 
   bot.hears("برد فرصت ها", async (ctx) => {
-    await showIndustryOpportunityBoardModule(ctx);
+    await showIndustryOpportunitiesPanel(ctx, "board", 0);
   });
 
   bot.hears("پیگیری درخواست ها", async (ctx) => {
-    await showIndustryApplicationTrackerModule(ctx);
+    await showIndustryTrackerPanel(ctx);
   });
 
   bot.hears("هاب پروژه ها", async (ctx) => {
-    await showIndustryProjectHubModule(ctx);
+    await showIndustryProjectsPanel(ctx, 0);
   });
 
   bot.hears("اجرای پروژه", async (ctx) => {
-    await showIndustryWorkspaceModule(ctx);
+    await showIndustryWorkspacePanel(ctx);
   });
 
   bot.hears("مسیر شغلی", async (ctx) => {
-    await showIndustryCareerPathModule(ctx);
+    await showIndustryStaticPanel(ctx, "career");
   });
 
   bot.hears("منابع صنعتی", async (ctx) => {
-    await showIndustryLearningLibraryModule(ctx);
+    await showIndustryResourcesPanel(ctx, 0);
+  });
+
+  bot.hears(/^بازگشت به پنل صنعت$/i, async (ctx) => {
+    clearIndustrySession(ctx);
+    await ctx.reply("به پنل صنعت برگشتی.", industryMenu());
+  });
+
+  bot.hears(/^بروزرسانی ماژول$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    if (session?.module === "profile") {
+      await showIndustryStaticPanel(ctx, "profile");
+      return;
+    }
+    if (session?.module === "career") {
+      await showIndustryStaticPanel(ctx, "career");
+      return;
+    }
+    await showIndustryHome(ctx);
+  });
+
+  bot.hears(/^قبلی فرصت ها$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    const panelType = session?.panelType || "board";
+    await showIndustryOpportunitiesPanel(ctx, panelType, Math.max(0, Number(session?.page || 0) - 1));
+  });
+
+  bot.hears(/^بعدی فرصت ها$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    const panelType = session?.panelType || "board";
+    await showIndustryOpportunitiesPanel(ctx, panelType, Number(session?.page || 0) + 1);
+  });
+
+  bot.hears(/^بروزرسانی فرصت ها$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    const panelType = session?.panelType || "board";
+    await showIndustryOpportunitiesPanel(ctx, panelType, Number(session?.page || 0));
+  });
+
+  bot.hears(/^جزئیات فرصت$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    setIndustrySession(ctx, {
+      mode: "opportunity-await-detail",
+      panelType: session?.panelType || "board",
+      page: Number(session?.page || 0)
+    });
+    await ctx.reply("شناسه فرصت را بفرست. مثال: 123", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^درخواست فرصت$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    setIndustrySession(ctx, {
+      mode: "opportunity-await-apply",
+      panelType: session?.panelType || "board",
+      page: Number(session?.page || 0)
+    });
+    await ctx.reply("شناسه فرصت برای درخواست را بفرست. مثال: 123", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^ذخیره فرصت$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    setIndustrySession(ctx, {
+      mode: "opportunity-await-save",
+      panelType: session?.panelType || "board",
+      page: Number(session?.page || 0)
+    });
+    await ctx.reply("شناسه فرصت برای ذخیره را بفرست. مثال: 123", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^قبلی پروژه ها$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    await showIndustryProjectsPanel(ctx, Math.max(0, Number(session?.page || 0) - 1));
+  });
+
+  bot.hears(/^بعدی پروژه ها$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    await showIndustryProjectsPanel(ctx, Number(session?.page || 0) + 1);
+  });
+
+  bot.hears(/^بروزرسانی پروژه ها$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    await showIndustryProjectsPanel(ctx, Number(session?.page || 0));
+  });
+
+  bot.hears(/^جزئیات پروژه$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    setIndustrySession(ctx, { mode: "project-await-detail", page: Number(session?.page || 0) });
+    await ctx.reply("شناسه پروژه را بفرست. مثال: 44", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^شروع پروژه$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    setIndustrySession(ctx, { mode: "project-await-start", page: Number(session?.page || 0) });
+    await ctx.reply("شناسه پروژه برای شروع را بفرست. مثال: 44", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^بروزرسانی پیگیری$/i, async (ctx) => {
+    await showIndustryTrackerPanel(ctx);
+  });
+
+  bot.hears(/^یادداشت درخواست$/i, async (ctx) => {
+    setIndustrySession(ctx, { mode: "tracker-await-note" });
+    await ctx.reply("فرمت: <applicationId>: <متن یادداشت>", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^پیگیری فرصت ذخیره شده$/i, async (ctx) => {
+    setIndustrySession(ctx, { mode: "tracker-await-follow" });
+    await ctx.reply("فرمت: <opportunityId>: <متن پیگیری>", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^بروزرسانی اجرای پروژه$/i, async (ctx) => {
+    await showIndustryWorkspacePanel(ctx);
+  });
+
+  bot.hears(/^ثبت پیشرفت$/i, async (ctx) => {
+    setIndustrySession(ctx, { mode: "workspace-await-progress" });
+    await ctx.reply("فرمت: <studentProjectId> <0-100>", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^ثبت لینک خروجی$/i, async (ctx) => {
+    setIndustrySession(ctx, { mode: "workspace-await-link" });
+    await ctx.reply("فرمت: <studentProjectId> <url>", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
+  });
+
+  bot.hears(/^قبلی منابع$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    await showIndustryResourcesPanel(ctx, Math.max(0, Number(session?.page || 0) - 1));
+  });
+
+  bot.hears(/^بعدی منابع$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    await showIndustryResourcesPanel(ctx, Number(session?.page || 0) + 1);
+  });
+
+  bot.hears(/^بروزرسانی منابع$/i, async (ctx) => {
+    const session = getIndustrySession(ctx);
+    await showIndustryResourcesPanel(ctx, Number(session?.page || 0));
   });
 
   bot.hears(/^پشتیبانی$/i, async (ctx) => {
+    clearIndustrySession(ctx);
     await showSupportTicketPanel(ctx);
   });
 
@@ -4497,11 +5331,36 @@ function registerHandlers(bot) {
     await closeSupportTicketFromAdminBot(ctx, ticketId);
   });
 
+  bot.hears(/^\/submissions(?:\s+(\d+))?$/i, async (ctx) => {
+    const page = Math.max(0, Number(ctx.match?.[1] || 0));
+    await showAdminSubmissionQueuePanel(ctx, page);
+  });
+
+  bot.hears(/^\/approve\s+(\d+)$/i, async (ctx) => {
+    const submissionId = Number(ctx.match?.[1]);
+    if (!submissionId) {
+      await ctx.reply("فرمت: /approve <submissionId>");
+      return;
+    }
+    await reviewAdminSubmissionById(ctx, submissionId, "approve");
+  });
+
+  bot.hears(/^\/reject\s+(\d+)\s+([\s\S]+)$/i, async (ctx) => {
+    const submissionId = Number(ctx.match?.[1]);
+    const reason = String(ctx.match?.[2] || "").trim();
+    if (!submissionId || !reason) {
+      await ctx.reply("فرمت: /reject <submissionId> <reason>");
+      return;
+    }
+    await reviewAdminSubmissionById(ctx, submissionId, "reject", reason);
+  });
+
   bot.command("adminpanel", async (ctx) => {
     await showAdminBotPanel(ctx);
   });
 
   bot.hears(/^پنل ادمین$/i, async (ctx) => {
+    clearIndustrySession(ctx);
     await showAdminBotPanel(ctx);
   });
 
@@ -4521,12 +5380,55 @@ function registerHandlers(bot) {
     await showAdminStartedUsersFromBot(ctx);
   });
 
+  bot.hears(/^تایید\/رد آپلودها$/i, async (ctx) => {
+    await showAdminSubmissionQueuePanel(ctx, 0);
+  });
+
+  bot.hears(/^قبلی صف تایید$/i, async (ctx) => {
+    const session = getAdminSession(ctx);
+    await showAdminSubmissionQueuePanel(ctx, Math.max(0, Number(session?.page || 0) - 1));
+  });
+
+  bot.hears(/^بعدی صف تایید$/i, async (ctx) => {
+    const session = getAdminSession(ctx);
+    await showAdminSubmissionQueuePanel(ctx, Number(session?.page || 0) + 1);
+  });
+
+  bot.hears(/^بروزرسانی صف$/i, async (ctx) => {
+    const session = getAdminSession(ctx);
+    await showAdminSubmissionQueuePanel(ctx, Number(session?.page || 0));
+  });
+
+  bot.hears(/^جزئیات ارسال$/i, async (ctx) => {
+    const session = getAdminSession(ctx) || { page: 0 };
+    setAdminSession(ctx, { mode: "admin-submissions-await-detail", page: Number(session.page || 0) });
+    await ctx.reply("شناسه ارسال را بفرست. مثال: 88", Markup.keyboard([["لغو"], [ADMIN_SUBMISSIONS_BACK]]).resize());
+  });
+
+  bot.hears(/^تایید ارسال$/i, async (ctx) => {
+    const session = getAdminSession(ctx) || { page: 0 };
+    setAdminSession(ctx, { mode: "admin-submissions-await-approve", page: Number(session.page || 0) });
+    await ctx.reply("شناسه ارسال برای تایید را بفرست. مثال: 88", Markup.keyboard([["لغو"], [ADMIN_SUBMISSIONS_BACK]]).resize());
+  });
+
+  bot.hears(/^رد ارسال$/i, async (ctx) => {
+    const session = getAdminSession(ctx) || { page: 0 };
+    setAdminSession(ctx, { mode: "admin-submissions-await-reject", page: Number(session.page || 0) });
+    await ctx.reply("فرمت: <submissionId>: <دلیل رد>", Markup.keyboard([["لغو"], [ADMIN_SUBMISSIONS_BACK]]).resize());
+  });
+
+  bot.hears(/^بازگشت به پنل ادمین$/i, async (ctx) => {
+    clearAdminSession(ctx);
+    await showAdminBotPanel(ctx);
+  });
+
   bot.hears(/^راهنمای ادمین$/i, async (ctx) => {
     await showAdminHelpFromBot(ctx);
   });
 
   bot.hears(ADMIN_MENU_BACK, async (ctx) => {
     if (!(await ensureSupportAdminAccess(ctx))) return;
+    clearAdminSession(ctx);
     await ctx.reply("از پنل ادمین خارج شدی.", mainMenuForContext(ctx));
   });
 
@@ -4616,6 +5518,7 @@ function registerHandlers(bot) {
   });
 
   bot.hears("مسیر من", async (ctx) => {
+    clearIndustrySession(ctx);
     await showMyPathHub(ctx);
   });
 
