@@ -1,8 +1,17 @@
 ﻿const { Telegraf, Markup } = require("telegraf");
 const { config } = require("./config");
 const { query } = require("./db");
+const {
+  buildSkillMap,
+  levelToNumber,
+  parseRequiredSkills,
+  scoreOpportunity,
+  scoreProject,
+  normalizeSkillName
+} = require("./services/industryHub");
 
 const profileSessions = new Map();
+const submissionSessions = new Map();
 
 const MAJOR_FAMILIES = [
   "مهندسی صنایع",
@@ -71,6 +80,14 @@ const UNI_MENU = [
   ["دروس دانشگاه", "اساتید دانشگاه"],
   ["جزوه های دانشگاه", "کتاب های دانشگاه"],
   ["منابع دانشگاه", "نکات امتحان دانشگاه"],
+  ["ارسال محتوای دانشگاه"],
+  [UNI_MENU_BACK]
+];
+const INDUSTRY_MENU = [
+  ["پروفایل صنعتی", "پیشنهاد فرصت ها"],
+  ["برد فرصت ها", "پیگیری درخواست ها"],
+  ["هاب پروژه ها", "اجرای پروژه"],
+  ["مسیر شغلی", "منابع صنعتی"],
   [UNI_MENU_BACK]
 ];
 
@@ -94,6 +111,55 @@ const PROFILE_STEPS = [
   { key: "portfolioUrl", section: "حرفه ای", question: "در صورت تمایل لینک پورتفولیو را وارد کنید.", required: false }
 ];
 
+const UNIVERSITY_SUBMISSION_BACK = "لغو ارسال محتوا";
+const UNIVERSITY_SUBMISSION_DONE = "ثبت نهایی ارسال";
+const UNIVERSITY_SUBMISSION_KINDS = [
+  { key: "course", label: "درس" },
+  { key: "professor", label: "استاد" },
+  { key: "note", label: "جزوه" },
+  { key: "book", label: "کتاب" },
+  { key: "resource", label: "منبع" },
+  { key: "video", label: "ویدیو" },
+  { key: "sample-question", label: "نمونه سوال" },
+  { key: "summary", label: "خلاصه" },
+  { key: "exam-tip", label: "نکته امتحانی" }
+];
+
+const UNIVERSITY_SUBMISSION_STEPS = [
+  {
+    key: "contentKind",
+    question: "نوع محتوا را انتخاب کن:"
+  },
+  {
+    key: "purpose",
+    question: "این محتوا برای چه کاری مفید است؟ (مثلا جمع بندی قبل امتحان)"
+  },
+  {
+    key: "usageGuide",
+    question: "چطور باید از این محتوا استفاده شود؟"
+  },
+  {
+    key: "title",
+    question: "عنوان محتوا را بنویس:"
+  },
+  {
+    key: "description",
+    question: "توضیح کامل محتوا را بنویس:"
+  },
+  {
+    key: "externalLink",
+    question: "اگر لینک داری بفرست (اختیاری - برای رد: «رد»)"
+  },
+  {
+    key: "tags",
+    question: "تگ ها را بنویس (اختیاری، با کاما جدا کن - مثال: الگوریتم, امتحان)"
+  },
+  {
+    key: "confirm",
+    question: "برای ثبت نهایی دکمه «ثبت نهایی ارسال» را بزن."
+  }
+];
+
 function mainMenu() {
   return Markup.keyboard([
     ["شروع", "تکمیل پروفایل"],
@@ -104,6 +170,10 @@ function mainMenu() {
 
 function universityMenu() {
   return Markup.keyboard(UNI_MENU).resize();
+}
+
+function industryMenu() {
+  return Markup.keyboard(INDUSTRY_MENU).resize();
 }
 
 function buildWebhookPath() {
@@ -332,6 +402,1175 @@ async function showUniversityKind(ctx, kind, title) {
   await ctx.reply(`${header}\n\n${formatList(items)}`, universityMenu());
 }
 
+function getSubmissionKindByLabel(label) {
+  return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.label === label) || null;
+}
+
+function submissionKindKeyboard() {
+  const options = UNIVERSITY_SUBMISSION_KINDS.map((item) => item.label);
+  return Markup.keyboard([
+    ...chunkOptions(options, 3),
+    [UNIVERSITY_SUBMISSION_BACK]
+  ]).resize();
+}
+
+function submissionSimpleKeyboard() {
+  return Markup.keyboard([["رد"], [UNIVERSITY_SUBMISSION_BACK]]).resize();
+}
+
+async function askSubmissionStep(ctx, session) {
+  const step = UNIVERSITY_SUBMISSION_STEPS[session.stepIndex];
+  if (!step) return;
+
+  if (step.key === "contentKind") {
+    await ctx.reply(step.question, submissionKindKeyboard());
+    return;
+  }
+
+  if (step.key === "confirm") {
+    await ctx.reply(
+      `${step.question}\n\n` +
+      `نوع: ${session.answers.contentKindLabel}\n` +
+      `عنوان: ${session.answers.title}\n` +
+      `هدف: ${session.answers.purpose}\n` +
+      `روش استفاده: ${session.answers.usageGuide}\n` +
+      `توضیح: ${String(session.answers.description || "").slice(0, 180)}...`,
+      Markup.keyboard([[UNIVERSITY_SUBMISSION_DONE], [UNIVERSITY_SUBMISSION_BACK]]).resize()
+    );
+    return;
+  }
+
+  if (step.key === "externalLink" || step.key === "tags") {
+    await ctx.reply(step.question, submissionSimpleKeyboard());
+    return;
+  }
+
+  await ctx.reply(step.question, Markup.keyboard([[UNIVERSITY_SUBMISSION_BACK]]).resize());
+}
+
+async function startUniversitySubmissionWizard(ctx) {
+  const userId = await ensureUser(ctx);
+  const key = getSessionKey(ctx);
+
+  submissionSessions.set(key, {
+    userId,
+    stepIndex: 0,
+    answers: {}
+  });
+
+  await ctx.reply(
+    "فرم ارسال محتوای دانشگاه شروع شد. اطلاعات کامل بفرست تا برای ادمین در صف بررسی ثبت شود."
+  );
+  await askSubmissionStep(ctx, submissionSessions.get(key));
+}
+
+function parseSubmissionStepValue(step, text) {
+  const raw = String(text || "").trim();
+  if (!raw && !["externalLink", "tags"].includes(step.key)) {
+    return { ok: false, message: "این فیلد الزامی است." };
+  }
+
+  if (step.key === "contentKind") {
+    const kind = getSubmissionKindByLabel(raw);
+    if (!kind) return { ok: false, message: "نوع محتوا را از دکمه ها انتخاب کن." };
+    return { ok: true, value: { contentKind: kind.key, contentKindLabel: kind.label } };
+  }
+
+  if (step.key === "title") {
+    if (raw.length < 6) return { ok: false, message: "عنوان باید حداقل 6 کاراکتر باشد." };
+    return { ok: true, value: raw };
+  }
+
+  if (step.key === "description") {
+    if (raw.length < 20) return { ok: false, message: "توضیح باید حداقل 20 کاراکتر باشد." };
+    return { ok: true, value: raw };
+  }
+
+  if (step.key === "externalLink") {
+    if (isSkipText(raw)) return { ok: true, value: null };
+    if (!validateUrl(raw)) return { ok: false, message: "لینک معتبر نیست. با http:// یا https:// شروع کن." };
+    return { ok: true, value: raw };
+  }
+
+  if (step.key === "tags") {
+    if (isSkipText(raw)) return { ok: true, value: [] };
+    const tags = parseList(raw).map((item) => item.toLowerCase()).slice(0, 10);
+    return { ok: true, value: tags };
+  }
+
+  if (step.key === "confirm") {
+    if (raw !== UNIVERSITY_SUBMISSION_DONE) {
+      return { ok: false, message: `برای ثبت، دکمه «${UNIVERSITY_SUBMISSION_DONE}» را بزن.` };
+    }
+    return { ok: true, value: true };
+  }
+
+  return { ok: true, value: raw };
+}
+
+async function saveUniversitySubmission(session) {
+  const profileRes = await query(
+    `SELECT major, term
+     FROM user_profiles
+     WHERE user_id = $1
+     LIMIT 1`,
+    [session.userId]
+  );
+  const major = profileRes.rows[0]?.major || null;
+  const term = profileRes.rows[0]?.term || null;
+
+  const composedDescription = [
+    `هدف: ${session.answers.purpose}`,
+    `نحوه استفاده: ${session.answers.usageGuide}`,
+    session.answers.description
+  ].join("\n\n");
+
+  const inserted = await query(
+    `INSERT INTO community_content_submissions
+     (user_id, section, content_kind, title, description, major, term, tags, external_link, status)
+     VALUES ($1, 'university', $2, $3, $4, $5, $6, $7::jsonb, $8, 'pending')
+     RETURNING *`,
+    [
+      session.userId,
+      session.answers.contentKind,
+      session.answers.title,
+      composedDescription,
+      major,
+      term,
+      JSON.stringify(session.answers.tags || []),
+      session.answers.externalLink || null
+    ]
+  );
+
+  await query(
+    `INSERT INTO admin_notifications
+     (type, title, message, payload, status)
+     VALUES ('submission-pending', $1, $2, $3::jsonb, 'open')`,
+    [
+      "University submission pending",
+      `${session.answers.title} requires moderation`,
+      JSON.stringify({
+        submissionId: inserted.rows[0].id,
+        userId: session.userId,
+        section: "university",
+        contentKind: session.answers.contentKind
+      })
+    ]
+  );
+
+  return inserted.rows[0];
+}
+
+async function handleSubmissionWizardInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = submissionSessions.get(key);
+  if (!session) return false;
+
+  const text = String(ctx.message?.text || "").trim();
+  if (text === UNIVERSITY_SUBMISSION_BACK) {
+    submissionSessions.delete(key);
+    await ctx.reply("ارسال محتوا لغو شد.", universityMenu());
+    return true;
+  }
+
+  const step = UNIVERSITY_SUBMISSION_STEPS[session.stepIndex];
+  if (!step) {
+    submissionSessions.delete(key);
+    await ctx.reply("نشست ارسال محتوا نامعتبر بود. دوباره شروع کن.", universityMenu());
+    return true;
+  }
+
+  const parsed = parseSubmissionStepValue(step, text);
+  if (!parsed.ok) {
+    await ctx.reply(parsed.message);
+    await askSubmissionStep(ctx, session);
+    return true;
+  }
+
+  if (step.key === "contentKind") {
+    session.answers.contentKind = parsed.value.contentKind;
+    session.answers.contentKindLabel = parsed.value.contentKindLabel;
+  } else if (step.key === "confirm") {
+    try {
+      const saved = await saveUniversitySubmission(session);
+      submissionSessions.delete(key);
+      await ctx.reply(
+        `ارسال شما ثبت شد و برای ادمین رفت.\nشناسه ارسال: #${saved.id}\nوضعیت: در انتظار بررسی`,
+        universityMenu()
+      );
+    } catch (error) {
+      console.error(error);
+      submissionSessions.delete(key);
+      await ctx.reply("خطا در ثبت ارسال. دوباره تلاش کن.", universityMenu());
+    }
+    return true;
+  } else {
+    session.answers[step.key] = parsed.value;
+  }
+
+  session.stepIndex += 1;
+  submissionSessions.set(key, session);
+  await askSubmissionStep(ctx, session);
+  return true;
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function toFaDate(value) {
+  if (!value) return "نامشخص";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "نامشخص";
+  return parsed.toLocaleDateString("fa-IR");
+}
+
+function formatOpportunityType(type) {
+  const map = {
+    internship: "کارآموزی",
+    job: "استخدام",
+    "project-based": "پروژه ای",
+    freelance: "فریلنس",
+    "part-time": "پاره وقت",
+    mentorship: "منتورشیپ",
+    challenge: "چالش"
+  };
+  return map[type] || type || "نامشخص";
+}
+
+function formatProjectType(type) {
+  const map = {
+    industry: "پروژه واقعی شرکت",
+    portfolio: "پروژه رزومه ای",
+    open_source: "تسک متن باز"
+  };
+  return map[type] || type || "نامشخص";
+}
+
+function formatLocation(locationMode, city) {
+  const modeMap = {
+    remote: "ریموت",
+    "on-site": "حضوری",
+    hybrid: "هیبرید"
+  };
+  const mode = modeMap[locationMode] || "نامشخص";
+  if (!city) return mode;
+  return `${mode} - ${city}`;
+}
+
+function formatApplicationStatus(status) {
+  const map = {
+    draft: "پیش نویس",
+    submitted: "ارسال شده",
+    viewed: "دیده شده",
+    interview: "مصاحبه",
+    rejected: "رد شده",
+    accepted: "قبول شده"
+  };
+  return map[status] || status || "نامشخص";
+}
+
+function formatStudentProjectStatus(status) {
+  const map = {
+    in_progress: "در حال انجام",
+    submitted: "تحویل شده",
+    completed: "تکمیل شده",
+    cancelled: "لغو شده"
+  };
+  return map[status] || status || "نامشخص";
+}
+
+function parseProfileSkills(profileSkills) {
+  return asArray(profileSkills)
+    .map((item) => {
+      if (typeof item === "string") {
+        return { name: item, score: 1 };
+      }
+
+      const name = String(item?.name || item?.skill_name || "").trim();
+      if (!name) return null;
+
+      return {
+        name,
+        score: Number(item?.score ?? item?.level ?? 1)
+      };
+    })
+    .filter(Boolean);
+}
+
+function sortSkillEntries(skillMap, limit = 6) {
+  return [...skillMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name, score]) => `${name}(${score})`);
+}
+
+function extractRequiredSkillNames(requiredSkills, limit = 20) {
+  const parsed = parseRequiredSkills(requiredSkills);
+  const names = [];
+  const seen = new Set();
+
+  for (const item of parsed) {
+    const name = String(item?.name || item?.skill || item?.skill_name || "").trim();
+    if (!name) continue;
+    const normalized = normalizeSkillName(name);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    names.push(name);
+    if (names.length >= limit) break;
+  }
+
+  return names;
+}
+
+function getMatchedSkills(requiredSkills, skillMap, limit = 3) {
+  const names = extractRequiredSkillNames(requiredSkills, 30);
+  return names.filter((name) => Number(skillMap.get(normalizeSkillName(name)) || 0) > 0).slice(0, limit);
+}
+
+function getMissingSkills(requiredSkills, skillMap, limit = 3) {
+  const names = extractRequiredSkillNames(requiredSkills, 30);
+  return names.filter((name) => Number(skillMap.get(normalizeSkillName(name)) || 0) <= 0).slice(0, limit);
+}
+
+function goalMatchesOpportunity(goal, opportunityType) {
+  const value = String(goal || "").toLowerCase();
+  if (!value) return false;
+
+  if (value.includes("کارآموز") && opportunityType === "internship") return true;
+  if (value.includes("شغل") && opportunityType === "job") return true;
+  if (value.includes("پروژه") && ["project-based", "freelance", "part-time", "challenge"].includes(opportunityType)) {
+    return true;
+  }
+
+  return false;
+}
+
+function buildOpportunityReason(item, profile, context) {
+  const reasons = [];
+  const matchedSkills = getMatchedSkills(item.required_skills, context.skillMap, 2);
+  const missingSkills = getMissingSkills(item.required_skills, context.skillMap, 2);
+
+  if (matchedSkills.length) reasons.push(`مهارت مشترک: ${matchedSkills.join(" + ")}`);
+  if (goalMatchesOpportunity(profile?.short_term_goal, item.opportunity_type)) reasons.push("همسو با هدف کوتاه مدت");
+  if (context.city && item.city && normalizeSkillName(context.city) === normalizeSkillName(item.city)) {
+    reasons.push("همسو با شهر انتخابی");
+  }
+  if (item.location_mode === "remote") reasons.push("قابل انجام به صورت ریموت");
+  if (context.weeklyHours && item.hours_per_week && Number(item.hours_per_week) <= Number(context.weeklyHours)) {
+    reasons.push("متناسب با زمان آزاد هفتگی");
+  }
+  if (!reasons.length && missingSkills.length) reasons.push(`گپ مهارتی کم: ${missingSkills.join(" + ")}`);
+  if (!reasons.length) reasons.push("سطح و شرایط کلی مناسب پروفایل تو است");
+
+  return reasons.slice(0, 2).join(" | ");
+}
+
+async function loadIndustryContext(ctx) {
+  const userId = await ensureUser(ctx);
+  const profileRes = await query(`SELECT * FROM user_profiles WHERE user_id = $1 LIMIT 1`, [userId]);
+  const profile = profileRes.rows[0] || null;
+
+  const dbSkillsRes = await query(
+    `SELECT skill_name, level
+     FROM student_skills
+     WHERE user_id = $1
+     ORDER BY level DESC, skill_name ASC`,
+    [userId]
+  );
+
+  const mergedSkills = [
+    ...dbSkillsRes.rows.map((item) => ({ name: item.skill_name, score: Number(item.level || 0) })),
+    ...parseProfileSkills(profile?.skills)
+  ];
+
+  const skillMap = buildSkillMap(mergedSkills);
+  const context = {
+    userId,
+    levelNum: levelToNumber(profile?.skill_level),
+    city: profile?.city || null,
+    weeklyHours: Number(profile?.weekly_hours || 0),
+    skillMap
+  };
+
+  return {
+    userId,
+    profile,
+    context
+  };
+}
+
+async function listOpenOpportunities(limit = 40) {
+  const rows = await query(
+    `SELECT o.*, c.name AS company_name
+     FROM industry_opportunities o
+     LEFT JOIN industry_companies c ON c.id = o.company_id
+     WHERE o.approval_status = 'approved'
+       AND o.status = 'open'
+     ORDER BY o.created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows.rows;
+}
+
+async function listOpenProjects(limit = 40) {
+  const rows = await query(
+    `SELECT p.*, c.name AS company_name
+     FROM industry_projects p
+     LEFT JOIN industry_companies c ON c.id = p.company_id
+     WHERE p.status = 'open'
+     ORDER BY p.created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows.rows;
+}
+
+async function showIndustryHome(ctx) {
+  const { profile } = await loadIndustryContext(ctx);
+  const profileHint = profile
+    ? "پروفایل صنعتی شما آماده است. یکی از ماژول ها را انتخاب کن."
+    : "برای خروجی دقیق تر، اول پروفایل را از بخش «تکمیل پروفایل» ثبت کن.";
+
+  await ctx.reply(`پنل صنعت فعال شد.\n${profileHint}`, industryMenu());
+}
+
+async function showIndustryProfileModule(ctx) {
+  const { profile, context } = await loadIndustryContext(ctx);
+  if (!profile) {
+    await ctx.reply("پروفایل صنعتی پیدا نشد. اول «تکمیل پروفایل» را انجام بده.", industryMenu());
+    return;
+  }
+
+  const interests = asArray(profile.interests).join("، ") || "ثبت نشده";
+  const skills = sortSkillEntries(context.skillMap, 8).join("، ") || "ثبت نشده";
+  const links = [
+    profile.github_url ? `Git: ${profile.github_url}` : null,
+    profile.portfolio_url ? `Portfolio: ${profile.portfolio_url}` : null,
+    profile.resume_url ? `Resume: ${profile.resume_url}` : null
+  ].filter(Boolean).join(" | ") || "ثبت نشده";
+
+  await ctx.reply(
+    `ماژول 1 - پروفایل صنعتی\n` +
+    `هدف: ${profile.short_term_goal || "ثبت نشده"}\n` +
+    `علاقه ها: ${interests}\n` +
+    `زمان آزاد هفتگی: ${profile.weekly_hours || "ثبت نشده"} ساعت\n` +
+    `شهر/ریموت: ${profile.city || "ثبت نشده"}\n` +
+    `مهارت ها: ${skills}\n` +
+    `نمونه کارها: ${links}\n\n` +
+    `این اطلاعات برای پیشنهاددهی فرصت ها استفاده می شود.`,
+    industryMenu()
+  );
+}
+
+async function showIndustryRecommenderModule(ctx) {
+  const { profile, context } = await loadIndustryContext(ctx);
+  if (!profile) {
+    await ctx.reply("برای پیشنهاد شخصی، اول «تکمیل پروفایل» را انجام بده.", industryMenu());
+    return;
+  }
+
+  const opportunities = await listOpenOpportunities(120);
+  if (!opportunities.length) {
+    await ctx.reply("فعلا فرصت صنعتی تاییدشده ای ثبت نشده.", industryMenu());
+    return;
+  }
+
+  const top = opportunities
+    .map((item) => ({ ...item, matchScore: scoreOpportunity(item, context) }))
+    .sort((a, b) => b.matchScore - a.matchScore)
+    .slice(0, 10);
+
+  const text = top
+    .map((item, index) =>
+      `${index + 1}. #${item.id} ${item.title} | ${formatOpportunityType(item.opportunity_type)} | ${item.level} | امتیاز ${item.matchScore}\n` +
+      `دلیل: ${buildOpportunityReason(item, profile, context)}`
+    )
+    .join("\n\n");
+
+  await ctx.reply(`ماژول 2 - موتور پیشنهاددهی\nTop 10 پیشنهاد شخصی:\n\n${text}`, industryMenu());
+}
+
+async function showIndustryOpportunityBoardModule(ctx) {
+  const { profile, context } = await loadIndustryContext(ctx);
+  const opportunities = await listOpenOpportunities(20);
+
+  if (!opportunities.length) {
+    await ctx.reply("در حال حاضر فرصت باز برای نمایش وجود ندارد.", industryMenu());
+    return;
+  }
+
+  const ranked = profile
+    ? opportunities
+        .map((item) => ({ ...item, matchScore: scoreOpportunity(item, context) }))
+        .sort((a, b) => b.matchScore - a.matchScore)
+    : opportunities;
+
+  const text = ranked.slice(0, 10).map((item, index) => {
+    const gap = profile ? getMissingSkills(item.required_skills, context.skillMap, 2) : [];
+    const gapText = gap.length ? ` | شکاف: ${gap.join(", ")}` : "";
+    const scoreText = profile ? ` | امتیاز: ${item.matchScore}` : "";
+
+    return (
+      `${index + 1}. #${item.id} ${item.title}` +
+      ` | ${formatOpportunityType(item.opportunity_type)}` +
+      ` | ${item.level}` +
+      ` | ${formatLocation(item.location_mode, item.city)}` +
+      ` | ددلاین: ${toFaDate(item.deadline_at)}` +
+      `${scoreText}${gapText}`
+    );
+  }).join("\n");
+
+  await ctx.reply(
+    `ماژول 3 - برد فرصت ها\n${text}\n\n` +
+    `جزئیات فرصت: جزئیات فرصت <id>\n` +
+    `درخواست: درخواست فرصت <id>\n` +
+    `ذخیره: ذخیره فرصت <id>`,
+    industryMenu()
+  );
+}
+
+async function findOpportunityById(opportunityId) {
+  const result = await query(
+    `SELECT o.*, c.name AS company_name, c.city AS company_city
+     FROM industry_opportunities o
+     LEFT JOIN industry_companies c ON c.id = o.company_id
+     WHERE o.id = $1
+     LIMIT 1`,
+    [opportunityId]
+  );
+
+  return result.rows[0] || null;
+}
+
+function contentMatchScore(item, keywords) {
+  if (!keywords.length) return 0;
+  const haystack = `${item.title || ""} ${item.description || ""} ${asArray(item.tags).join(" ")}`.toLowerCase();
+  let score = 0;
+  for (const keyword of keywords) {
+    if (haystack.includes(keyword)) score += 1;
+  }
+  return score;
+}
+
+function projectMatchScore(item, keywords) {
+  if (!keywords.length) return item.type === "portfolio" ? 1 : 0;
+  const required = extractRequiredSkillNames(item.required_skills, 20).map((skill) => normalizeSkillName(skill));
+  const haystack = `${item.title || ""} ${item.brief || ""} ${required.join(" ")}`.toLowerCase();
+  let score = item.type === "portfolio" ? 1 : 0;
+  for (const keyword of keywords) {
+    if (haystack.includes(keyword)) score += 1;
+  }
+  return score;
+}
+
+async function buildPreparationTips(requiredSkills, gapSkills) {
+  const keywords = [...gapSkills, ...requiredSkills]
+    .map((item) => normalizeSkillName(item))
+    .filter(Boolean)
+    .slice(0, 4);
+
+  const resourcesRes = await query(
+    `SELECT title, kind, description, tags
+     FROM contents
+     WHERE type = 'industry'
+       AND is_published = TRUE
+       AND kind IN ('resource', 'video')
+     ORDER BY created_at DESC
+     LIMIT 30`
+  );
+
+  const scoredResources = resourcesRes.rows
+    .map((item) => ({ item, score: contentMatchScore(item, keywords) }))
+    .sort((a, b) => b.score - a.score);
+
+  const pickedResources = scoredResources
+    .filter((entry) => entry.score > 0)
+    .slice(0, 2)
+    .map((entry) => entry.item);
+
+  if (pickedResources.length < 2) {
+    for (const item of resourcesRes.rows) {
+      if (pickedResources.find((entry) => entry.title === item.title && entry.kind === item.kind)) continue;
+      pickedResources.push(item);
+      if (pickedResources.length >= 2) break;
+    }
+  }
+
+  const projects = await listOpenProjects(30);
+  const pickedProject = projects
+    .map((item) => ({ item, score: projectMatchScore(item, keywords) }))
+    .sort((a, b) => b.score - a.score)[0]?.item || null;
+
+  return {
+    resources: pickedResources,
+    project: pickedProject
+  };
+}
+
+async function showOpportunityDetailsById(ctx, opportunityId) {
+  const { profile, context } = await loadIndustryContext(ctx);
+  const item = await findOpportunityById(opportunityId);
+
+  if (!item || item.approval_status !== "approved" || item.status !== "open") {
+    await ctx.reply("فرصت معتبری با این شناسه پیدا نشد.", industryMenu());
+    return;
+  }
+
+  const requiredSkills = extractRequiredSkillNames(item.required_skills, 6);
+  const missingSkills = profile ? getMissingSkills(item.required_skills, context.skillMap, 4) : [];
+  const prep = await buildPreparationTips(requiredSkills, missingSkills);
+
+  const resourcesText = prep.resources.length
+    ? prep.resources.map((res, idx) => `${idx + 1}. [${res.kind}] ${res.title}`).join("\n")
+    : "1. منبعی ثبت نشده";
+
+  const resumeProjectText = prep.project
+    ? `#${prep.project.id} ${prep.project.title}`
+    : "پروژه رزومه ای مرتبط فعلا ثبت نشده";
+
+  await ctx.reply(
+    `فرصت #${item.id} - ${item.title}\n` +
+    `شرکت: ${item.company_name || "نامشخص"}\n` +
+    `نوع: ${formatOpportunityType(item.opportunity_type)} | سطح: ${item.level}\n` +
+    `موقعیت: ${formatLocation(item.location_mode, item.city || item.company_city)}\n` +
+    `ددلاین: ${toFaDate(item.deadline_at)}\n` +
+    `مهارت های لازم: ${requiredSkills.join("، ") || "ثبت نشده"}\n` +
+    `شکاف مهارتی شما: ${missingSkills.join("، ") || "شکاف خاصی دیده نشد"}\n\n` +
+    `شرح:\n${String(item.description || "").slice(0, 600)}\n\n` +
+    `برای آماده شدن:\n${resourcesText}\n` +
+    `پروژه رزومه ای پیشنهادی: ${resumeProjectText}\n\n` +
+    `Apply: درخواست فرصت ${item.id}\nSave: ذخیره فرصت ${item.id}`,
+    industryMenu()
+  );
+}
+
+async function applyOpportunityById(ctx, opportunityId) {
+  const { userId } = await loadIndustryContext(ctx);
+  const item = await findOpportunityById(opportunityId);
+
+  if (!item || item.approval_status !== "approved" || item.status !== "open") {
+    await ctx.reply("این فرصت در حال حاضر قابل درخواست نیست.", industryMenu());
+    return;
+  }
+
+  const upsert = await query(
+    `INSERT INTO industry_applications
+     (user_id, opportunity_id, status, note)
+     VALUES ($1, $2, 'submitted', NULL)
+     ON CONFLICT (user_id, opportunity_id)
+     DO UPDATE SET
+       status = 'submitted',
+       updated_at = NOW()
+     RETURNING *`,
+    [userId, opportunityId]
+  );
+
+  await ctx.reply(
+    `درخواست برای فرصت #${opportunityId} ثبت شد.\nوضعیت: ${formatApplicationStatus(upsert.rows[0]?.status)}`,
+    industryMenu()
+  );
+}
+
+async function saveOpportunityById(ctx, opportunityId) {
+  const { userId } = await loadIndustryContext(ctx);
+  const item = await findOpportunityById(opportunityId);
+
+  if (!item || item.approval_status !== "approved" || item.status !== "open") {
+    await ctx.reply("این فرصت برای ذخیره در دسترس نیست.", industryMenu());
+    return;
+  }
+
+  await query(
+    `INSERT INTO industry_saved_opportunities
+     (user_id, opportunity_id, follow_up_status)
+     VALUES ($1, $2, 'saved')
+     ON CONFLICT (user_id, opportunity_id)
+     DO UPDATE SET
+       follow_up_status = 'saved',
+       updated_at = NOW()`,
+    [userId, opportunityId]
+  );
+
+  await ctx.reply(`فرصت #${opportunityId} ذخیره شد.`, industryMenu());
+}
+
+async function showIndustryApplicationTrackerModule(ctx) {
+  const { userId } = await loadIndustryContext(ctx);
+  const appsRes = await query(
+    `SELECT a.id, a.status, a.note, a.updated_at, o.id AS opportunity_id, o.title AS opportunity_title, o.deadline_at
+     FROM industry_applications a
+     JOIN industry_opportunities o ON o.id = a.opportunity_id
+     WHERE a.user_id = $1
+     ORDER BY a.updated_at DESC
+     LIMIT 10`,
+    [userId]
+  );
+
+  const savedRes = await query(
+    `SELECT s.follow_up_status, s.follow_up_note, s.updated_at, o.id AS opportunity_id, o.title AS opportunity_title, o.deadline_at
+     FROM industry_saved_opportunities s
+     JOIN industry_opportunities o ON o.id = s.opportunity_id
+     WHERE s.user_id = $1
+     ORDER BY s.updated_at DESC
+     LIMIT 10`,
+    [userId]
+  );
+
+  const now = Date.now();
+  const reminders = [];
+
+  for (const app of appsRes.rows) {
+    const deadline = app.deadline_at ? new Date(app.deadline_at).getTime() : NaN;
+    if (Number.isFinite(deadline)) {
+      const days = Math.ceil((deadline - now) / (1000 * 60 * 60 * 24));
+      if (days >= 0 && days <= 7 && !["accepted", "rejected"].includes(app.status)) {
+        reminders.push(`${app.opportunity_title} (${days} روز تا ددلاین)`);
+      }
+    }
+  }
+
+  const applicationsText = appsRes.rows.length
+    ? appsRes.rows.map((item) =>
+      `#${item.id} | فرصت #${item.opportunity_id} ${item.opportunity_title} | ${formatApplicationStatus(item.status)}`
+    ).join("\n")
+    : "درخواستی ثبت نشده";
+
+  const savedText = savedRes.rows.length
+    ? savedRes.rows.map((item) =>
+      `فرصت #${item.opportunity_id} ${item.opportunity_title} | پیگیری: ${item.follow_up_status || "saved"}`
+    ).join("\n")
+    : "فرصت ذخیره شده ای ندارید";
+
+  await ctx.reply(
+    `ماژول 4 - پیگیری درخواست ها\n` +
+    `وضعیت درخواست ها:\n${applicationsText}\n\n` +
+    `فرصت های ذخیره شده:\n${savedText}\n\n` +
+    `یادآور پیگیری:\n${reminders.join("\n") || "مورد فوری نداری"}\n\n` +
+    `ثبت یادداشت: یادداشت درخواست <applicationId>: <متن>\n` +
+    `ثبت پیگیری: پیگیری فرصت <opportunityId>: <متن>`,
+    industryMenu()
+  );
+}
+
+async function addApplicationNote(ctx, applicationId, note) {
+  const { userId } = await loadIndustryContext(ctx);
+  const updated = await query(
+    `UPDATE industry_applications
+     SET note = $1,
+         updated_at = NOW()
+     WHERE id = $2
+       AND user_id = $3
+     RETURNING *`,
+    [note, applicationId, userId]
+  );
+
+  if (!updated.rows.length) {
+    await ctx.reply("درخواستی با این شناسه برای شما پیدا نشد.", industryMenu());
+    return;
+  }
+
+  await ctx.reply(`یادداشت برای درخواست #${applicationId} ذخیره شد.`, industryMenu());
+}
+
+async function addSavedOpportunityFollowUp(ctx, opportunityId, note) {
+  const { userId } = await loadIndustryContext(ctx);
+  const item = await findOpportunityById(opportunityId);
+  if (!item) {
+    await ctx.reply("فرصتی با این شناسه پیدا نشد.", industryMenu());
+    return;
+  }
+
+  const updated = await query(
+    `UPDATE industry_saved_opportunities
+     SET follow_up_status = 'pending-follow-up',
+         follow_up_note = $1,
+         updated_at = NOW()
+     WHERE user_id = $2
+       AND opportunity_id = $3
+     RETURNING *`,
+    [note, userId, opportunityId]
+  );
+
+  if (!updated.rows.length) {
+    await query(
+      `INSERT INTO industry_saved_opportunities
+       (user_id, opportunity_id, follow_up_status, follow_up_note)
+       VALUES ($1, $2, 'pending-follow-up', $3)
+       ON CONFLICT (user_id, opportunity_id)
+       DO UPDATE SET
+         follow_up_status = 'pending-follow-up',
+         follow_up_note = EXCLUDED.follow_up_note,
+         updated_at = NOW()`,
+      [userId, opportunityId, note]
+    );
+  }
+
+  await ctx.reply(`پیگیری برای فرصت #${opportunityId} ثبت شد.`, industryMenu());
+}
+
+async function showIndustryProjectHubModule(ctx) {
+  const { profile, context } = await loadIndustryContext(ctx);
+  const projects = await listOpenProjects(60);
+
+  if (!projects.length) {
+    await ctx.reply("فعلا پروژه باز برای نمایش نداریم.", industryMenu());
+    return;
+  }
+
+  const ranked = profile
+    ? projects
+        .map((item) => ({ ...item, matchScore: scoreProject(item, context) }))
+        .sort((a, b) => b.matchScore - a.matchScore)
+    : projects;
+
+  const byType = {
+    industry: [],
+    portfolio: [],
+    open_source: []
+  };
+
+  for (const item of ranked) {
+    if (byType[item.type]) byType[item.type].push(item);
+  }
+
+  const sections = [
+    ["industry", "پروژه های واقعی شرکت ها"],
+    ["portfolio", "پروژه های رزومه ای فنجو"],
+    ["open_source", "تسک های متن باز"]
+  ].map(([type, title]) => {
+    const items = byType[type].slice(0, 3);
+    const body = items.length
+      ? items.map((item) =>
+        `#${item.id} ${item.title} | ${item.level} | ${item.estimated_hours || "?"}h${profile ? ` | امتیاز ${item.matchScore}` : ""}`
+      ).join("\n")
+      : "موردی ثبت نشده";
+
+    return `${title}:\n${body}`;
+  }).join("\n\n");
+
+  await ctx.reply(
+    `ماژول 5 - هاب پروژه ها\n${sections}\n\n` +
+    `جزئیات پروژه: جزئیات پروژه <id>\n` +
+    `شروع پروژه: شروع پروژه <id>`,
+    industryMenu()
+  );
+}
+
+async function showProjectDetailsById(ctx, projectId) {
+  const projectRes = await query(
+    `SELECT p.*, c.name AS company_name
+     FROM industry_projects p
+     LEFT JOIN industry_companies c ON c.id = p.company_id
+     WHERE p.id = $1
+     LIMIT 1`,
+    [projectId]
+  );
+  const project = projectRes.rows[0] || null;
+
+  if (!project || project.status !== "open") {
+    await ctx.reply("پروژه معتبری با این شناسه پیدا نشد.", industryMenu());
+    return;
+  }
+
+  const milestonesRes = await query(
+    `SELECT title, description, week_no
+     FROM industry_project_milestones
+     WHERE project_id = $1
+     ORDER BY week_no ASC, id ASC
+     LIMIT 4`,
+    [projectId]
+  );
+
+  const required = extractRequiredSkillNames(project.required_skills, 6).join("، ") || "ثبت نشده";
+  const deliverables = asArray(project.deliverables)
+    .map((item) => (typeof item === "string" ? item : String(item?.title || item?.name || "").trim()))
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(" | ") || "ثبت نشده";
+  const criteria = asArray(project.evaluation_criteria)
+    .map((item) => (typeof item === "string" ? item : String(item?.title || item?.name || "").trim()))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" | ") || "ثبت نشده";
+
+  const milestones = milestonesRes.rows.length
+    ? milestonesRes.rows.map((m, idx) => `${idx + 1}. هفته ${m.week_no || "?"}: ${m.title}`).join("\n")
+    : "مایلستونی تعریف نشده";
+
+  await ctx.reply(
+    `پروژه #${project.id} - ${project.title}\n` +
+    `نوع: ${formatProjectType(project.type)} | سطح: ${project.level}\n` +
+    `شرکت: ${project.company_name || "نامشخص"}\n` +
+    `مهارت های لازم: ${required}\n` +
+    `Brief: ${String(project.brief || "").slice(0, 500)}\n\n` +
+    `Deliverables: ${deliverables}\n` +
+    `معیار ارزیابی: ${criteria}\n` +
+    `خروجی رزومه ای: ${project.resume_ready ? "دارد" : "ندارد"}\n\n` +
+    `Milestones:\n${milestones}\n\n` +
+    `برای شروع: شروع پروژه ${project.id}`,
+    industryMenu()
+  );
+}
+
+async function startStudentProjectById(ctx, projectId) {
+  const { userId } = await loadIndustryContext(ctx);
+  const projectRes = await query(`SELECT id, title FROM industry_projects WHERE id = $1 AND status = 'open' LIMIT 1`, [projectId]);
+  if (!projectRes.rows.length) {
+    await ctx.reply("پروژه باز معتبری با این شناسه پیدا نشد.", industryMenu());
+    return;
+  }
+
+  const upsert = await query(
+    `INSERT INTO industry_student_projects
+     (user_id, project_id, status, progress, output_links)
+     VALUES ($1, $2, 'in_progress', 0, '[]'::jsonb)
+     ON CONFLICT (user_id, project_id)
+     DO UPDATE SET
+       status = 'in_progress',
+       updated_at = NOW()
+     RETURNING *`,
+    [userId, projectId]
+  );
+
+  await ctx.reply(
+    `پروژه #${projectId} شروع شد.\nشناسه فضای کاری: ${upsert.rows[0].id}\n` +
+    `برای ثبت پیشرفت: پیشرفت پروژه ${upsert.rows[0].id} 30`,
+    industryMenu()
+  );
+}
+
+async function updateStudentProjectProgress(ctx, studentProjectId, progressRaw) {
+  const { userId } = await loadIndustryContext(ctx);
+  const progress = Math.max(0, Math.min(100, Number(progressRaw)));
+  if (!Number.isFinite(progress)) {
+    await ctx.reply("درصد پیشرفت نامعتبر است.", industryMenu());
+    return;
+  }
+
+  const currentRes = await query(
+    `SELECT *
+     FROM industry_student_projects
+     WHERE id = $1
+       AND user_id = $2
+     LIMIT 1`,
+    [studentProjectId, userId]
+  );
+  if (!currentRes.rows.length) {
+    await ctx.reply("فضای کاری پروژه برای شما پیدا نشد.", industryMenu());
+    return;
+  }
+
+  const current = currentRes.rows[0];
+  const nextStatus = progress >= 100
+    ? "completed"
+    : (current.status === "completed" ? "in_progress" : current.status);
+
+  const updated = await query(
+    `UPDATE industry_student_projects
+     SET progress = $1,
+         status = $2,
+         updated_at = NOW()
+     WHERE id = $3
+       AND user_id = $4
+     RETURNING *`,
+    [progress, nextStatus, studentProjectId, userId]
+  );
+
+  await ctx.reply(
+    `پیشرفت پروژه #${studentProjectId} ثبت شد: ${updated.rows[0].progress}% | ${formatStudentProjectStatus(updated.rows[0].status)}`,
+    industryMenu()
+  );
+}
+
+async function addStudentProjectLink(ctx, studentProjectId, url) {
+  const { userId } = await loadIndustryContext(ctx);
+
+  if (!validateUrl(url)) {
+    await ctx.reply("لینک معتبر نیست. باید با http:// یا https:// شروع شود.", industryMenu());
+    return;
+  }
+
+  const currentRes = await query(
+    `SELECT *
+     FROM industry_student_projects
+     WHERE id = $1
+       AND user_id = $2
+     LIMIT 1`,
+    [studentProjectId, userId]
+  );
+  if (!currentRes.rows.length) {
+    await ctx.reply("فضای کاری پروژه برای شما پیدا نشد.", industryMenu());
+    return;
+  }
+
+  const current = currentRes.rows[0];
+  const links = asArray(current.output_links).map((item) => String(item)).filter(Boolean);
+  if (!links.includes(url)) links.push(url);
+
+  const updated = await query(
+    `UPDATE industry_student_projects
+     SET output_links = $1::jsonb,
+         updated_at = NOW()
+     WHERE id = $2
+       AND user_id = $3
+     RETURNING *`,
+    [JSON.stringify(links), studentProjectId, userId]
+  );
+
+  await ctx.reply(
+    `لینک خروجی اضافه شد. تعداد لینک ها: ${asArray(updated.rows[0].output_links).length}`,
+    industryMenu()
+  );
+}
+
+async function showIndustryWorkspaceModule(ctx) {
+  const { userId } = await loadIndustryContext(ctx);
+  const rows = await query(
+    `SELECT sp.id, sp.project_id, sp.status, sp.progress, sp.output_links, p.title, p.estimated_hours
+     FROM industry_student_projects sp
+     JOIN industry_projects p ON p.id = sp.project_id
+     WHERE sp.user_id = $1
+     ORDER BY sp.updated_at DESC
+     LIMIT 10`,
+    [userId]
+  );
+
+  if (!rows.rows.length) {
+    await ctx.reply(
+      `ماژول 6 - اجرای پروژه\nفعلا پروژه فعالی نداری.\nبرای شروع: شروع پروژه <projectId>`,
+      industryMenu()
+    );
+    return;
+  }
+
+  const text = rows.rows.map((item) =>
+    `#${item.id} | پروژه #${item.project_id} ${item.title} | ${item.progress}% | ${formatStudentProjectStatus(item.status)} | لینک خروجی: ${asArray(item.output_links).length}`
+  ).join("\n");
+
+  await ctx.reply(
+    `ماژول 6 - اجرای پروژه\n${text}\n\n` +
+    `ثبت پیشرفت: پیشرفت پروژه <studentProjectId> <0-100>\n` +
+    `ثبت لینک خروجی: لینک پروژه <studentProjectId> <url>`,
+    industryMenu()
+  );
+}
+
+async function showIndustryCareerPathModule(ctx) {
+  const { profile, context } = await loadIndustryContext(ctx);
+  const pathsRes = await query(
+    `SELECT *
+     FROM industry_career_paths
+     WHERE is_active = TRUE
+     ORDER BY created_at DESC
+     LIMIT 20`
+  );
+
+  if (!pathsRes.rows.length) {
+    await ctx.reply("مسیر شغلی فعالی ثبت نشده.", industryMenu());
+    return;
+  }
+
+  const ranked = pathsRes.rows
+    .map((path) => {
+      const required = asArray(path.required_skills).map((item) => String(item).trim()).filter(Boolean);
+      const matched = required.filter((item) => Number(context.skillMap.get(normalizeSkillName(item)) || 0) > 0);
+      const gaps = required.filter((item) => Number(context.skillMap.get(normalizeSkillName(item)) || 0) <= 0);
+      const coverage = required.length ? Math.round((matched.length / required.length) * 100) : 50;
+
+      return { ...path, required, gaps, coverage };
+    })
+    .sort((a, b) => b.coverage - a.coverage);
+
+  const top = ranked.slice(0, 3);
+  const lines = top.map((item, index) =>
+    `${index + 1}. ${item.name} | پوشش مهارتی: ${item.coverage}% | شکاف: ${item.gaps.slice(0, 3).join("، ") || "ندارد"}`
+  ).join("\n");
+
+  const selected = top[0];
+  const roadmapRes = await query(
+    `SELECT id, title
+     FROM industry_roadmaps
+     WHERE career_path_id = $1
+       AND is_active = TRUE
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [selected.id]
+  );
+
+  const roadmap = roadmapRes.rows[0] || null;
+  const stepsRes = roadmap
+    ? await query(
+        `SELECT step_order, title
+         FROM industry_roadmap_steps
+         WHERE roadmap_id = $1
+         ORDER BY step_order ASC
+         LIMIT 3`,
+        [roadmap.id]
+      )
+    : { rows: [] };
+
+  const checklist = asArray(selected.junior_ready_checklist).slice(0, 4).join(" | ") || "چک لیستی ثبت نشده";
+  const nextSteps = stepsRes.rows.length
+    ? stepsRes.rows.map((item) => `${item.step_order}. ${item.title}`).join("\n")
+    : "گام مشخصی ثبت نشده";
+
+  await ctx.reply(
+    `ماژول 7 - مسیر شغلی\n${profile ? `هدف فعلی: ${profile.short_term_goal || "ثبت نشده"}\n` : ""}` +
+    `${lines}\n\n` +
+    `مسیر پیشنهادی: ${selected.name}\n` +
+    `Roadmap: ${roadmap?.title || "ثبت نشده"}\n` +
+    `قدم بعدی:\n${nextSteps}\n\n` +
+    `Junior-ready checklist:\n${checklist}`,
+    industryMenu()
+  );
+}
+
+async function showIndustryLearningLibraryModule(ctx) {
+  const { profile } = await loadIndustryContext(ctx);
+  const interests = asArray(profile?.interests).map((item) => normalizeSkillName(item)).filter(Boolean);
+
+  const contentsRes = await query(
+    `SELECT title, kind, description, tags
+     FROM contents
+     WHERE type = 'industry'
+       AND is_published = TRUE
+       AND kind IN ('resource', 'video', 'roadmap', 'project')
+     ORDER BY created_at DESC
+     LIMIT 40`
+  );
+
+  const rankedContents = contentsRes.rows
+    .map((item) => ({ item, score: contentMatchScore(item, interests) }))
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.item)
+    .slice(0, 8);
+
+  const resourcesText = rankedContents.length
+    ? rankedContents.map((item, index) => `${index + 1}. [${item.kind}] ${item.title}`).join("\n")
+    : "منبعی برای نمایش ثبت نشده";
+
+  const miniProjects = await query(
+    `SELECT id, title, type
+     FROM industry_projects
+     WHERE status = 'open'
+       AND type IN ('portfolio', 'open_source')
+     ORDER BY created_at DESC
+     LIMIT 2`
+  );
+
+  const miniText = miniProjects.rows.length
+    ? miniProjects.rows.map((item) => `- #${item.id} ${item.title} (${formatProjectType(item.type)})`).join("\n")
+    : "- مینی پروژه ای ثبت نشده";
+
+  await ctx.reply(
+    `ماژول 8 - کتابخانه منابع صنعتی\n${resourcesText}\n\n` +
+    `تمرین و mini-project پیشنهادی:\n${miniText}`,
+    industryMenu()
+  );
+}
+
 async function ensureUser(ctx) {
   const telegramId = String(ctx.from.id);
   const fullName = `${ctx.from.first_name || ""} ${ctx.from.last_name || ""}`.trim() || "Student";
@@ -545,6 +1784,15 @@ async function handleProfileWizardInput(ctx) {
     "کتاب های دانشگاه",
     "منابع دانشگاه",
     "نکات امتحان دانشگاه",
+    "ارسال محتوای دانشگاه",
+    "پروفایل صنعتی",
+    "پیشنهاد فرصت ها",
+    "برد فرصت ها",
+    "پیگیری درخواست ها",
+    "هاب پروژه ها",
+    "اجرای پروژه",
+    "مسیر شغلی",
+    "منابع صنعتی",
     UNI_MENU_BACK
   ]);
 
@@ -697,6 +1945,9 @@ async function handleProfileWizardInput(ctx) {
 
 function registerHandlers(bot) {
   bot.on("text", async (ctx, next) => {
+    const handledSubmission = await handleSubmissionWizardInput(ctx);
+    if (handledSubmission) return;
+
     const handled = await handleProfileWizardInput(ctx);
     if (handled) return;
     return next();
@@ -761,28 +2012,133 @@ function registerHandlers(bot) {
     await showUniversityKind(ctx, "exam-tip", "نکات امتحان دانشگاه");
   });
 
+  bot.hears("ارسال محتوای دانشگاه", async (ctx) => {
+    await startUniversitySubmissionWizard(ctx);
+  });
+
   bot.hears(UNI_MENU_BACK, async (ctx) => {
     await ctx.reply("به منوی اصلی برگشتید.", mainMenu());
   });
 
   bot.hears("صنعت", async (ctx) => {
-    const items = await query(
-      `SELECT title, kind FROM contents
-       WHERE type = 'industry' AND is_published = TRUE
-       ORDER BY created_at DESC
-       LIMIT 5`
-    );
+    await showIndustryHome(ctx);
+  });
 
-    if (!items.rows.length) {
-      await ctx.reply("هنوز فرصت صنعتی ثبت نشده.");
+  bot.hears("پروفایل صنعتی", async (ctx) => {
+    await showIndustryProfileModule(ctx);
+  });
+
+  bot.hears("پیشنهاد فرصت ها", async (ctx) => {
+    await showIndustryRecommenderModule(ctx);
+  });
+
+  bot.hears("برد فرصت ها", async (ctx) => {
+    await showIndustryOpportunityBoardModule(ctx);
+  });
+
+  bot.hears("پیگیری درخواست ها", async (ctx) => {
+    await showIndustryApplicationTrackerModule(ctx);
+  });
+
+  bot.hears("هاب پروژه ها", async (ctx) => {
+    await showIndustryProjectHubModule(ctx);
+  });
+
+  bot.hears("اجرای پروژه", async (ctx) => {
+    await showIndustryWorkspaceModule(ctx);
+  });
+
+  bot.hears("مسیر شغلی", async (ctx) => {
+    await showIndustryCareerPathModule(ctx);
+  });
+
+  bot.hears("منابع صنعتی", async (ctx) => {
+    await showIndustryLearningLibraryModule(ctx);
+  });
+
+  bot.hears(/^جزئیات فرصت\s+(\d+)$/, async (ctx) => {
+    const opportunityId = Number(ctx.match[1]);
+    if (!opportunityId) {
+      await ctx.reply("شناسه فرصت نامعتبر است.", industryMenu());
       return;
     }
+    await showOpportunityDetailsById(ctx, opportunityId);
+  });
 
-    const text = items.rows
-      .map((item, index) => `${index + 1}. [${item.kind}] ${item.title}`)
-      .join("\n");
+  bot.hears(/^درخواست فرصت\s+(\d+)$/, async (ctx) => {
+    const opportunityId = Number(ctx.match[1]);
+    if (!opportunityId) {
+      await ctx.reply("شناسه فرصت نامعتبر است.", industryMenu());
+      return;
+    }
+    await applyOpportunityById(ctx, opportunityId);
+  });
 
-    await ctx.reply(`فرصت های صنعتی:\n${text}`);
+  bot.hears(/^ذخیره فرصت\s+(\d+)$/, async (ctx) => {
+    const opportunityId = Number(ctx.match[1]);
+    if (!opportunityId) {
+      await ctx.reply("شناسه فرصت نامعتبر است.", industryMenu());
+      return;
+    }
+    await saveOpportunityById(ctx, opportunityId);
+  });
+
+  bot.hears(/^یادداشت درخواست\s+(\d+)\s*[:：]\s*(.+)$/i, async (ctx) => {
+    const applicationId = Number(ctx.match[1]);
+    const note = String(ctx.match[2] || "").trim();
+    if (!applicationId || !note) {
+      await ctx.reply("فرمت درست: یادداشت درخواست <applicationId>: <متن>", industryMenu());
+      return;
+    }
+    await addApplicationNote(ctx, applicationId, note);
+  });
+
+  bot.hears(/^پیگیری فرصت\s+(\d+)\s*[:：]\s*(.+)$/i, async (ctx) => {
+    const opportunityId = Number(ctx.match[1]);
+    const note = String(ctx.match[2] || "").trim();
+    if (!opportunityId || !note) {
+      await ctx.reply("فرمت درست: پیگیری فرصت <opportunityId>: <متن>", industryMenu());
+      return;
+    }
+    await addSavedOpportunityFollowUp(ctx, opportunityId, note);
+  });
+
+  bot.hears(/^جزئیات پروژه\s+(\d+)$/, async (ctx) => {
+    const projectId = Number(ctx.match[1]);
+    if (!projectId) {
+      await ctx.reply("شناسه پروژه نامعتبر است.", industryMenu());
+      return;
+    }
+    await showProjectDetailsById(ctx, projectId);
+  });
+
+  bot.hears(/^شروع پروژه\s+(\d+)$/, async (ctx) => {
+    const projectId = Number(ctx.match[1]);
+    if (!projectId) {
+      await ctx.reply("شناسه پروژه نامعتبر است.", industryMenu());
+      return;
+    }
+    await startStudentProjectById(ctx, projectId);
+  });
+
+  bot.hears(/^پیشرفت پروژه\s+(\d+)\s+(\d{1,3})$/, async (ctx) => {
+    const studentProjectId = Number(ctx.match[1]);
+    const progress = Number(ctx.match[2]);
+    if (!studentProjectId || !Number.isFinite(progress)) {
+      await ctx.reply("فرمت درست: پیشرفت پروژه <studentProjectId> <0-100>", industryMenu());
+      return;
+    }
+    await updateStudentProjectProgress(ctx, studentProjectId, progress);
+  });
+
+  bot.hears(/^لینک پروژه\s+(\d+)\s+(\S+)$/i, async (ctx) => {
+    const studentProjectId = Number(ctx.match[1]);
+    const url = String(ctx.match[2] || "").trim();
+    if (!studentProjectId || !url) {
+      await ctx.reply("فرمت درست: لینک پروژه <studentProjectId> <url>", industryMenu());
+      return;
+    }
+    await addStudentProjectLink(ctx, studentProjectId, url);
   });
 
   bot.hears("مسیر من", async (ctx) => {

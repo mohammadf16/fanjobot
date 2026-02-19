@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const { config } = require("../config");
 
 const router = express.Router();
@@ -19,7 +19,7 @@ router.get("/admin", (req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>پنل ادمین فنجوبو</title>
+  <title>Ù¾Ù†Ù„ Ø§Ø¯Ù…ÛŒÙ† ÙÙ†Ø¬ÙˆØ¨Ùˆ</title>
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap");
     :root {
@@ -189,55 +189,127 @@ router.get("/admin", (req, res) => {
   <main class="shell">
     <section class="panel hero">
       <div>
-        <h1>پنل ادمین فنجوبو</h1>
-        <div class="hint">مدیریت کامل کاربران، ثبت‌نام، پروفایل، نوتیف‌ها و صف بررسی محتوا</div>
+        <h1>Ù¾Ù†Ù„ Ø§Ø¯Ù…ÛŒÙ† ÙÙ†Ø¬ÙˆØ¨Ùˆ</h1>
+        <div class="hint">Ù…Ø¯ÛŒØ±ÛŒØª Ú©Ø§Ù…Ù„ Ú©Ø§Ø±Ø¨Ø±Ø§Ù†ØŒ Ø«Ø¨Øªâ€ŒÙ†Ø§Ù…ØŒ Ù¾Ø±ÙˆÙØ§ÛŒÙ„ØŒ Ù†ÙˆØªÛŒÙâ€ŒÙ‡Ø§ Ùˆ ØµÙ Ø¨Ø±Ø±Ø³ÛŒ Ù…Ø­ØªÙˆØ§</div>
       </div>
-      <div class="hint">مسیر: <code>/admin</code></div>
+      <div class="hint">Ù…Ø³ÛŒØ±: <code>/admin</code></div>
     </section>
 
     <section class="panel" id="authPanel">
-      <h2 class="section-title">ورود ادمین</h2>
+      <h2 class="section-title">ÙˆØ±ÙˆØ¯ Ø§Ø¯Ù…ÛŒÙ†</h2>
       <div class="row">
         <input id="adminIdInput" placeholder="ADMIN_USER_ID" value="${defaultAdminId}" />
         <input id="adminKeyInput" placeholder="ADMIN_API_KEY" type="password" />
-        <button id="loginBtn" class="tight">ورود به پنل</button>
+        <button id="loginBtn" class="tight">ÙˆØ±ÙˆØ¯ Ø¨Ù‡ Ù¾Ù†Ù„</button>
       </div>
-      <p class="small">درخواست‌ها با هدرهای <code>x-admin-key</code> و <code>x-admin-id</code> ارسال می‌شوند.</p>
+      <p class="small">Ø¯Ø±Ø®ÙˆØ§Ø³Øªâ€ŒÙ‡Ø§ Ø¨Ø§ Ù‡Ø¯Ø±Ù‡Ø§ÛŒ <code>x-admin-key</code> Ùˆ <code>x-admin-id</code> Ø§Ø±Ø³Ø§Ù„ Ù…ÛŒâ€ŒØ´ÙˆÙ†Ø¯.</p>
     </section>
 
     <section class="status hidden" id="statusBox"></section>
 
+
     <section class="panel hidden" id="dashboardPanel">
       <div class="row">
-        <h2 class="section-title tight">داشبورد</h2>
-        <button id="refreshAllBtn" class="ghost tight">بازخوانی همه</button>
+        <h2 class="section-title tight">???????</h2>
+        <button id="refreshAllBtn" class="ghost tight">???????? ???</button>
       </div>
       <div class="grid" id="statsGrid"></div>
+      <div class="split block">
+        <div class="card">
+          <div class="row">
+            <h3 class="section-title tight">?????? ????</h3>
+            <button id="refreshQuickBoardsBtn" class="ghost tight">????????</button>
+          </div>
+          <div class="list" id="quickQueueList"></div>
+        </div>
+        <div class="card">
+          <h3 class="section-title">??????? ????</h3>
+          <div class="list" id="recentUsersList"></div>
+        </div>
+      </div>
+      <div class="card block">
+        <div class="row">
+          <h3 class="section-title tight">??????? ???? ????????</h3>
+          <button id="refreshModerationBoardBtn" class="ghost tight">????????</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>??? / ???</th>
+                <th>?????</th>
+                <th>?????</th>
+                <th>??????</th>
+              </tr>
+            </thead>
+            <tbody id="moderationBoardBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card block">
+        <div class="row">
+          <h3 class="section-title tight">?????? ???? ????? / ????</h3>
+          <button id="refreshOpsBoardBtn" class="ghost tight">????????</button>
+        </div>
+        <div class="split">
+          <div>
+            <h4 class="section-title">?????? ???? ??????</h4>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>?????</th>
+                    <th>???</th>
+                    <th>??????</th>
+                  </tr>
+                </thead>
+                <tbody id="contentOpsBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h4 class="section-title">???????? ?? ?????? + ??????????</h4>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>????</th>
+                    <th>?????</th>
+                    <th>??????</th>
+                  </tr>
+                </thead>
+                <tbody id="industryOpsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
-
     <section class="panel hidden">
       <div class="row">
-        <h2 class="section-title tight">کاربران</h2>
-        <input id="userSearchInput" placeholder="جستجو (نام، ایمیل/شماره، تلگرام)" />
+        <h2 class="section-title tight">Ú©Ø§Ø±Ø¨Ø±Ø§Ù†</h2>
+        <input id="userSearchInput" placeholder="Ø¬Ø³ØªØ¬Ùˆ (Ù†Ø§Ù…ØŒ Ø§ÛŒÙ…ÛŒÙ„/Ø´Ù…Ø§Ø±Ù‡ØŒ ØªÙ„Ú¯Ø±Ø§Ù…)" />
         <select id="userHasProfileInput">
-          <option value="">همه</option>
-          <option value="true">دارای پروفایل</option>
-          <option value="false">بدون پروفایل</option>
+          <option value="">Ù‡Ù…Ù‡</option>
+          <option value="true">Ø¯Ø§Ø±Ø§ÛŒ Ù¾Ø±ÙˆÙØ§ÛŒÙ„</option>
+          <option value="false">Ø¨Ø¯ÙˆÙ† Ù¾Ø±ÙˆÙØ§ÛŒÙ„</option>
         </select>
-        <button id="loadUsersBtn" class="tight">جستجو</button>
+        <button id="loadUsersBtn" class="tight">Ø¬Ø³ØªØ¬Ùˆ</button>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>شناسه</th>
-              <th>نام</th>
-              <th>ارتباط</th>
-              <th>تلگرام</th>
-              <th>پروفایل</th>
-              <th>رشته/ترم</th>
-              <th>ثبت</th>
-              <th>عملیات</th>
+              <th>Ø´Ù†Ø§Ø³Ù‡</th>
+              <th>Ù†Ø§Ù…</th>
+              <th>Ø§Ø±ØªØ¨Ø§Ø·</th>
+              <th>ØªÙ„Ú¯Ø±Ø§Ù…</th>
+              <th>Ù¾Ø±ÙˆÙØ§ÛŒÙ„</th>
+              <th>Ø±Ø´ØªÙ‡/ØªØ±Ù…</th>
+              <th>Ø«Ø¨Øª</th>
+              <th>Ø¹Ù…Ù„ÛŒØ§Øª</th>
             </tr>
           </thead>
           <tbody id="usersBody"></tbody>
@@ -248,63 +320,63 @@ router.get("/admin", (req, res) => {
 
     <section class="panel hidden split">
       <div>
-        <h2 class="section-title">ثبت‌نام کاربر جدید</h2>
+        <h2 class="section-title">Ø«Ø¨Øªâ€ŒÙ†Ø§Ù… Ú©Ø§Ø±Ø¨Ø± Ø¬Ø¯ÛŒØ¯</h2>
         <div class="row">
-          <input id="newFullName" placeholder="نام کامل" />
-          <input id="newPhoneOrEmail" placeholder="شماره یا ایمیل" />
-          <input id="newTelegramId" placeholder="Telegram ID (اختیاری)" />
+          <input id="newFullName" placeholder="Ù†Ø§Ù… Ú©Ø§Ù…Ù„" />
+          <input id="newPhoneOrEmail" placeholder="Ø´Ù…Ø§Ø±Ù‡ ÛŒØ§ Ø§ÛŒÙ…ÛŒÙ„" />
+          <input id="newTelegramId" placeholder="Telegram ID (Ø§Ø®ØªÛŒØ§Ø±ÛŒ)" />
         </div>
         <div class="row block">
-          <label class="tight"><input type="checkbox" id="newIncludeProfile" /> ثبت همزمان پروفایل</label>
+          <label class="tight"><input type="checkbox" id="newIncludeProfile" /> Ø«Ø¨Øª Ù‡Ù…Ø²Ù…Ø§Ù† Ù¾Ø±ÙˆÙØ§ÛŒÙ„</label>
         </div>
         <div id="newProfileFields" class="hidden">
           <div class="row block">
-            <input id="newMajor" placeholder="رشته" />
-            <input id="newLevel" placeholder="مقطع" />
-            <input id="newTerm" placeholder="ترم" />
+            <input id="newMajor" placeholder="Ø±Ø´ØªÙ‡" />
+            <input id="newLevel" placeholder="Ù…Ù‚Ø·Ø¹" />
+            <input id="newTerm" placeholder="ØªØ±Ù…" />
             <input id="newSkillLevel" placeholder="skillLevel: beginner/intermediate/advanced" />
           </div>
           <div class="row block">
-            <input id="newShortGoal" placeholder="هدف کوتاه مدت" />
-            <input id="newWeeklyHours" placeholder="ساعت هفتگی (عدد)" />
-            <input id="newUniversity" placeholder="دانشگاه (اختیاری)" />
-            <input id="newCity" placeholder="شهر (اختیاری)" />
+            <input id="newShortGoal" placeholder="Ù‡Ø¯Ù Ú©ÙˆØªØ§Ù‡ Ù…Ø¯Øª" />
+            <input id="newWeeklyHours" placeholder="Ø³Ø§Ø¹Øª Ù‡ÙØªÚ¯ÛŒ (Ø¹Ø¯Ø¯)" />
+            <input id="newUniversity" placeholder="Ø¯Ø§Ù†Ø´Ú¯Ø§Ù‡ (Ø§Ø®ØªÛŒØ§Ø±ÛŒ)" />
+            <input id="newCity" placeholder="Ø´Ù‡Ø± (Ø§Ø®ØªÛŒØ§Ø±ÛŒ)" />
           </div>
           <div class="row block">
-            <input id="newInterests" placeholder="علاقه‌مندی‌ها: ai,web,backend" />
-            <input id="newPassedCourses" placeholder="دروس پاس شده: CE101,MA201" />
-            <input id="newSkills" placeholder="مهارت‌ها: node:8,sql:7" />
+            <input id="newInterests" placeholder="Ø¹Ù„Ø§Ù‚Ù‡â€ŒÙ…Ù†Ø¯ÛŒâ€ŒÙ‡Ø§: ai,web,backend" />
+            <input id="newPassedCourses" placeholder="Ø¯Ø±ÙˆØ³ Ù¾Ø§Ø³ Ø´Ø¯Ù‡: CE101,MA201" />
+            <input id="newSkills" placeholder="Ù…Ù‡Ø§Ø±Øªâ€ŒÙ‡Ø§: node:8,sql:7" />
           </div>
         </div>
         <div class="row block">
-          <button id="createUserBtn">ثبت کاربر</button>
+          <button id="createUserBtn">Ø«Ø¨Øª Ú©Ø§Ø±Ø¨Ø±</button>
         </div>
       </div>
 
       <div>
-        <h2 class="section-title">ویرایش کاربر</h2>
-        <div class="small" id="editUserHint">یک کاربر از جدول انتخاب کن.</div>
+        <h2 class="section-title">ÙˆÛŒØ±Ø§ÛŒØ´ Ú©Ø§Ø±Ø¨Ø±</h2>
+        <div class="small" id="editUserHint">ÛŒÚ© Ú©Ø§Ø±Ø¨Ø± Ø§Ø² Ø¬Ø¯ÙˆÙ„ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†.</div>
         <div class="row block">
           <input id="editUserId" placeholder="User ID" readonly />
-          <input id="editFullName" placeholder="نام کامل" />
-          <input id="editPhoneOrEmail" placeholder="شماره یا ایمیل" />
+          <input id="editFullName" placeholder="Ù†Ø§Ù… Ú©Ø§Ù…Ù„" />
+          <input id="editPhoneOrEmail" placeholder="Ø´Ù…Ø§Ø±Ù‡ ÛŒØ§ Ø§ÛŒÙ…ÛŒÙ„" />
           <input id="editTelegramId" placeholder="Telegram ID" />
         </div>
         <div class="row block">
-          <label class="tight"><input type="checkbox" id="editIncludeProfile" /> به‌روزرسانی پروفایل</label>
+          <label class="tight"><input type="checkbox" id="editIncludeProfile" /> Ø¨Ù‡â€ŒØ±ÙˆØ²Ø±Ø³Ø§Ù†ÛŒ Ù¾Ø±ÙˆÙØ§ÛŒÙ„</label>
         </div>
         <div id="editProfileFields" class="hidden">
           <div class="row block">
-            <input id="editMajor" placeholder="رشته" />
-            <input id="editLevel" placeholder="مقطع" />
-            <input id="editTerm" placeholder="ترم" />
+            <input id="editMajor" placeholder="Ø±Ø´ØªÙ‡" />
+            <input id="editLevel" placeholder="Ù…Ù‚Ø·Ø¹" />
+            <input id="editTerm" placeholder="ØªØ±Ù…" />
             <input id="editSkillLevel" placeholder="skillLevel" />
           </div>
           <div class="row block">
-            <input id="editShortGoal" placeholder="هدف کوتاه مدت" />
-            <input id="editWeeklyHours" placeholder="ساعت هفتگی" />
-            <input id="editUniversity" placeholder="دانشگاه" />
-            <input id="editCity" placeholder="شهر" />
+            <input id="editShortGoal" placeholder="Ù‡Ø¯Ù Ú©ÙˆØªØ§Ù‡ Ù…Ø¯Øª" />
+            <input id="editWeeklyHours" placeholder="Ø³Ø§Ø¹Øª Ù‡ÙØªÚ¯ÛŒ" />
+            <input id="editUniversity" placeholder="Ø¯Ø§Ù†Ø´Ú¯Ø§Ù‡" />
+            <input id="editCity" placeholder="Ø´Ù‡Ø±" />
           </div>
           <div class="row block">
             <input id="editInterests" placeholder="interests: ai,web" />
@@ -313,24 +385,24 @@ router.get("/admin", (req, res) => {
           </div>
         </div>
         <div class="row block">
-          <button id="updateUserBtn">ذخیره تغییرات</button>
-          <button id="deleteUserBtn" class="danger">حذف کاربر</button>
+          <button id="updateUserBtn">Ø°Ø®ÛŒØ±Ù‡ ØªØºÛŒÛŒØ±Ø§Øª</button>
+          <button id="deleteUserBtn" class="danger">Ø­Ø°Ù Ú©Ø§Ø±Ø¨Ø±</button>
         </div>
       </div>
     </section>
 
     <section class="panel hidden split">
       <div>
-        <h2 class="section-title">نوتیف‌های ادمین</h2>
+        <h2 class="section-title">Ù†ÙˆØªÛŒÙâ€ŒÙ‡Ø§ÛŒ Ø§Ø¯Ù…ÛŒÙ†</h2>
         <div class="row">
-          <button id="loadNotificationsBtn" class="ghost tight">بازخوانی</button>
+          <button id="loadNotificationsBtn" class="ghost tight">Ø¨Ø§Ø²Ø®ÙˆØ§Ù†ÛŒ</button>
         </div>
         <div class="list block" id="notificationsList"></div>
       </div>
       <div>
-        <h2 class="section-title">صف بررسی محتوا</h2>
+        <h2 class="section-title">ØµÙ Ø¨Ø±Ø±Ø³ÛŒ Ù…Ø­ØªÙˆØ§</h2>
         <div class="row">
-          <button id="loadSubmissionsBtn" class="ghost tight">بازخوانی</button>
+          <button id="loadSubmissionsBtn" class="ghost tight">Ø¨Ø§Ø²Ø®ÙˆØ§Ù†ÛŒ</button>
         </div>
         <div class="list block" id="submissionsList"></div>
       </div>
@@ -367,7 +439,7 @@ router.get("/admin", (req, res) => {
 
     function csvToArray(text) {
       return String(text || "")
-        .split(/[,،]/)
+        .split(/[,ØŒ]/)
         .map((item) => item.trim())
         .filter(Boolean);
     }
@@ -439,17 +511,17 @@ router.get("/admin", (req, res) => {
       const data = await api("/api/admin/dashboard/overview");
       const stats = data.overview || {};
       const labels = [
-        ["total_users", "کل کاربران"],
-        ["total_profiles", "پروفایل‌ها"],
-        ["total_contents", "کل محتوا"],
-        ["published_contents", "محتوای منتشر شده"],
-        ["total_opportunities", "فرصت‌های صنعتی"],
-        ["pending_opportunities", "فرصت‌های در انتظار تایید"],
-        ["total_projects", "پروژه‌های صنعتی"],
-        ["total_applications", "درخواست‌های شغلی"],
-        ["total_submissions", "ارسال‌های انجمن"],
-        ["pending_submissions", "ارسال‌های در انتظار"],
-        ["open_notifications", "نوتیف‌های باز"]
+        ["total_users", "Ú©Ù„ Ú©Ø§Ø±Ø¨Ø±Ø§Ù†"],
+        ["total_profiles", "Ù¾Ø±ÙˆÙØ§ÛŒÙ„â€ŒÙ‡Ø§"],
+        ["total_contents", "Ú©Ù„ Ù…Ø­ØªÙˆØ§"],
+        ["published_contents", "Ù…Ø­ØªÙˆØ§ÛŒ Ù…Ù†ØªØ´Ø± Ø´Ø¯Ù‡"],
+        ["total_opportunities", "ÙØ±ØµØªâ€ŒÙ‡Ø§ÛŒ ØµÙ†Ø¹ØªÛŒ"],
+        ["pending_opportunities", "ÙØ±ØµØªâ€ŒÙ‡Ø§ÛŒ Ø¯Ø± Ø§Ù†ØªØ¸Ø§Ø± ØªØ§ÛŒÛŒØ¯"],
+        ["total_projects", "Ù¾Ø±ÙˆÚ˜Ù‡â€ŒÙ‡Ø§ÛŒ ØµÙ†Ø¹ØªÛŒ"],
+        ["total_applications", "Ø¯Ø±Ø®ÙˆØ§Ø³Øªâ€ŒÙ‡Ø§ÛŒ Ø´ØºÙ„ÛŒ"],
+        ["total_submissions", "Ø§Ø±Ø³Ø§Ù„â€ŒÙ‡Ø§ÛŒ Ø§Ù†Ø¬Ù…Ù†"],
+        ["pending_submissions", "Ø§Ø±Ø³Ø§Ù„â€ŒÙ‡Ø§ÛŒ Ø¯Ø± Ø§Ù†ØªØ¸Ø§Ø±"],
+        ["open_notifications", "Ù†ÙˆØªÛŒÙâ€ŒÙ‡Ø§ÛŒ Ø¨Ø§Ø²"]
       ];
 
       el("statsGrid").innerHTML = labels.map(([key, label]) => \`
@@ -458,6 +530,20 @@ router.get("/admin", (req, res) => {
           <div class="stat-label">\${label}</div>
         </article>
       \`).join("");
+
+      const recentUsers = data.recentUsers || [];
+      el("recentUsersList").innerHTML = recentUsers.length
+        ? recentUsers.map((user) => \`
+            <article class="list-item">
+              <div class="row">
+                <strong>#\${user.id} \${esc(user.full_name || "-")}</strong>
+                <span class="badge \${user.has_profile ? "ok" : "off"} tight">\${user.has_profile ? "پروفایل دارد" : "بدون پروفایل"}</span>
+              </div>
+              <div class="small">\${esc(user.phone_or_email || "-")}</div>
+              <div class="small">\${esc(user.created_at || "")}</div>
+            </article>
+          \`).join("")
+        : "<div class='small'>کاربر جدیدی ثبت نشده.</div>";
     }
 
     async function loadUsers() {
@@ -476,14 +562,14 @@ router.get("/admin", (req, res) => {
           <td>\${esc(user.full_name)}</td>
           <td>\${esc(user.phone_or_email)}</td>
           <td>\${esc(user.telegram_id || "-")}</td>
-          <td>\${user.has_profile ? '<span class="badge ok">دارد</span>' : '<span class="badge off">ندارد</span>'}</td>
+          <td>\${user.has_profile ? '<span class="badge ok">Ø¯Ø§Ø±Ø¯</span>' : '<span class="badge off">Ù†Ø¯Ø§Ø±Ø¯</span>'}</td>
           <td>\${esc(user.major || "-")} / \${esc(user.term || "-")}</td>
           <td>\${esc(user.created_at)}</td>
-          <td><button class="ghost user-select" data-id="\${user.id}">انتخاب</button></td>
+          <td><button class="ghost user-select" data-id="\${user.id}">Ø§Ù†ØªØ®Ø§Ø¨</button></td>
         </tr>
-      \`).join("") || "<tr><td colspan='8'>کاربری پیدا نشد.</td></tr>";
+      \`).join("") || "<tr><td colspan='8'>Ú©Ø§Ø±Ø¨Ø±ÛŒ Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯.</td></tr>";
 
-      el("usersMeta").textContent = \`تعداد: \${Number(data.total || 0).toLocaleString("fa-IR")} | نمایش: \${state.users.length}\`;
+      el("usersMeta").textContent = \`ØªØ¹Ø¯Ø§Ø¯: \${Number(data.total || 0).toLocaleString("fa-IR")} | Ù†Ù…Ø§ÛŒØ´: \${state.users.length}\`;
 
       document.querySelectorAll(".user-select").forEach((btn) => {
         btn.addEventListener("click", () => loadUserDetail(btn.dataset.id));
@@ -512,13 +598,13 @@ router.get("/admin", (req, res) => {
       const projects = data.activity?.studentProjects?.length || 0;
       const events = data.activity?.events?.length || 0;
       const submissions = data.activity?.submissions?.length || 0;
-      el("editUserHint").textContent = \`کاربر #\${user.user_id} | اپلیکیشن: \${apps} | پروژه دانشجویی: \${projects} | رخداد: \${events} | ارسال انجمن: \${submissions}\`;
+      el("editUserHint").textContent = \`Ú©Ø§Ø±Ø¨Ø± #\${user.user_id} | Ø§Ù¾Ù„ÛŒÚ©ÛŒØ´Ù†: \${apps} | Ù¾Ø±ÙˆÚ˜Ù‡ Ø¯Ø§Ù†Ø´Ø¬ÙˆÛŒÛŒ: \${projects} | Ø±Ø®Ø¯Ø§Ø¯: \${events} | Ø§Ø±Ø³Ø§Ù„ Ø§Ù†Ø¬Ù…Ù†: \${submissions}\`;
     }
 
     async function loadUserDetail(userId) {
       const data = await api("/api/admin/users/" + userId);
       fillEditForm(data);
-      showStatus("جزئیات کاربر بارگذاری شد.");
+      showStatus("Ø¬Ø²Ø¦ÛŒØ§Øª Ú©Ø§Ø±Ø¨Ø± Ø¨Ø§Ø±Ú¯Ø°Ø§Ø±ÛŒ Ø´Ø¯.");
     }
 
     async function createUser() {
@@ -537,14 +623,14 @@ router.get("/admin", (req, res) => {
         body: JSON.stringify(payload)
       });
 
-      showStatus(\`کاربر جدید ثبت شد. شناسه: \${data.user?.id}\`);
+      showStatus(\`Ú©Ø§Ø±Ø¨Ø± Ø¬Ø¯ÛŒØ¯ Ø«Ø¨Øª Ø´Ø¯. Ø´Ù†Ø§Ø³Ù‡: \${data.user?.id}\`);
       await Promise.all([loadOverview(), loadUsers()]);
     }
 
     async function updateUser() {
       const userId = el("editUserId").value;
       if (!userId) {
-        showStatus("ابتدا یک کاربر را انتخاب کن.", true);
+        showStatus("Ø§Ø¨ØªØ¯Ø§ ÛŒÚ© Ú©Ø§Ø±Ø¨Ø± Ø±Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†.", true);
         return;
       }
 
@@ -563,20 +649,20 @@ router.get("/admin", (req, res) => {
         body: JSON.stringify(payload)
       });
 
-      showStatus("اطلاعات کاربر ذخیره شد.");
+      showStatus("Ø§Ø·Ù„Ø§Ø¹Ø§Øª Ú©Ø§Ø±Ø¨Ø± Ø°Ø®ÛŒØ±Ù‡ Ø´Ø¯.");
       await Promise.all([loadOverview(), loadUsers(), loadUserDetail(userId)]);
     }
 
     async function deleteUser() {
       const userId = el("editUserId").value;
-      if (!userId) return showStatus("کاربری برای حذف انتخاب نشده.", true);
-      if (!confirm("حذف کاربر انجام شود؟")) return;
+      if (!userId) return showStatus("Ú©Ø§Ø±Ø¨Ø±ÛŒ Ø¨Ø±Ø§ÛŒ Ø­Ø°Ù Ø§Ù†ØªØ®Ø§Ø¨ Ù†Ø´Ø¯Ù‡.", true);
+      if (!confirm("Ø­Ø°Ù Ú©Ø§Ø±Ø¨Ø± Ø§Ù†Ø¬Ø§Ù… Ø´ÙˆØ¯ØŸ")) return;
 
       await api("/api/admin/users/" + userId, { method: "DELETE" });
-      showStatus("کاربر حذف شد.");
+      showStatus("Ú©Ø§Ø±Ø¨Ø± Ø­Ø°Ù Ø´Ø¯.");
 
       el("editUserId").value = "";
-      el("editUserHint").textContent = "یک کاربر از جدول انتخاب کن.";
+      el("editUserHint").textContent = "ÛŒÚ© Ú©Ø§Ø±Ø¨Ø± Ø§Ø² Ø¬Ø¯ÙˆÙ„ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†.";
       await Promise.all([loadOverview(), loadUsers()]);
     }
 
@@ -591,7 +677,7 @@ router.get("/admin", (req, res) => {
           <div class="small">\${esc(item.message || "-")}</div>
           <div class="small">#\${item.id} | \${esc(item.created_at || "")}</div>
         </article>
-      \`).join("") || "<div class='small'>نوتیف باز وجود ندارد.</div>";
+      \`).join("") || "<div class='small'>Ù†ÙˆØªÛŒÙ Ø¨Ø§Ø² ÙˆØ¬ÙˆØ¯ Ù†Ø¯Ø§Ø±Ø¯.</div>";
     }
 
     async function loadSubmissions() {
@@ -603,20 +689,151 @@ router.get("/admin", (req, res) => {
             <span class="badge warn tight">\${esc(item.status || "pending")}</span>
           </div>
           <div class="small">\${esc(item.section || "-")} / \${esc(item.content_kind || "-")}</div>
-          <div class="small">کاربر: #\${esc(item.user_id)} | \${esc(item.created_at || "")}</div>
+          <div class="small">Ú©Ø§Ø±Ø¨Ø±: #\${esc(item.user_id)} | \${esc(item.created_at || "")}</div>
         </article>
-      \`).join("") || "<div class='small'>در حال حاضر موردی در صف بررسی نیست.</div>";
+      \`).join("") || "<div class='small'>Ø¯Ø± Ø­Ø§Ù„ Ø­Ø§Ø¶Ø± Ù…ÙˆØ±Ø¯ÛŒ Ø¯Ø± ØµÙ Ø¨Ø±Ø±Ø³ÛŒ Ù†ÛŒØ³Øª.</div>";
+    }
+
+    async function loadQuickBoards() {
+      const [pendingSubmissions, pendingOpportunities, openNotifications] = await Promise.all([
+        api("/api/admin/moderation/submissions?status=pending&limit=5"),
+        api("/api/admin/industry/opportunities?approvalStatus=pending&limit=5"),
+        api("/api/admin/notifications?status=open&limit=5")
+      ]);
+
+      const lines = [];
+      for (const item of (pendingSubmissions.items || [])) {
+        lines.push(\`<article class="list-item"><strong>ارسال #\${item.id}</strong><div class="small">\${esc(item.title || "-")}</div></article>\`);
+      }
+      for (const item of (pendingOpportunities.items || [])) {
+        lines.push(\`<article class="list-item"><strong>فرصت #\${item.id}</strong><div class="small">\${esc(item.title || "-")}</div></article>\`);
+      }
+      for (const item of (openNotifications.items || [])) {
+        lines.push(\`<article class="list-item"><strong>نوتیف #\${item.id}</strong><div class="small">\${esc(item.title || item.type || "-")}</div></article>\`);
+      }
+
+      el("quickQueueList").innerHTML = lines.join("") || "<div class='small'>آیتم فوری وجود ندارد.</div>";
+    }
+
+    async function loadModerationBoard() {
+      const data = await api("/api/admin/moderation/submissions?status=pending&limit=15");
+      const rows = data.items || [];
+
+      el("moderationBoardBody").innerHTML = rows.map((item) => \`
+        <tr>
+          <td>\${item.id}</td>
+          <td>\${esc(item.section || "-")} / \${esc(item.content_kind || "-")}</td>
+          <td>\${esc(item.title || "-")}</td>
+          <td>#\${esc(item.user_id)}</td>
+          <td>
+            <div class="row">
+              <button class="tight mod-approve" data-id="\${item.id}">تایید</button>
+              <button class="tight danger mod-reject" data-id="\${item.id}">رد</button>
+            </div>
+          </td>
+        </tr>
+      \`).join("") || "<tr><td colspan='5'>ارسالی در انتظار نداریم.</td></tr>";
+    }
+
+    async function loadOpsBoard() {
+      const [contents, pendingOpps, applications] = await Promise.all([
+        api("/api/admin/content?isPublished=false&limit=12"),
+        api("/api/admin/industry/opportunities?approvalStatus=pending&limit=8"),
+        api("/api/admin/industry/applications?limit=8")
+      ]);
+
+      el("contentOpsBody").innerHTML = (contents.items || []).map((item) => \`
+        <tr>
+          <td>\${item.id}</td>
+          <td>\${esc(item.title || "-")}</td>
+          <td>\${esc(item.type || "-")} / \${esc(item.kind || "-")}</td>
+          <td><button class="tight publish-content" data-id="\${item.id}">انتشار</button></td>
+        </tr>
+      \`).join("") || "<tr><td colspan='4'>موردی نیست.</td></tr>";
+
+      const oppRows = (pendingOpps.items || []).map((item) => \`
+        <tr>
+          <td>فرصت #\${item.id} - \${esc(item.title || "-")}</td>
+          <td>\${esc(item.approval_status || "pending")}</td>
+          <td>
+            <div class="row">
+              <button class="tight approve-opp" data-id="\${item.id}">تایید</button>
+              <button class="tight danger reject-opp" data-id="\${item.id}">رد</button>
+            </div>
+          </td>
+        </tr>
+      \`);
+
+      const appRows = (applications.items || []).map((item) => \`
+        <tr>
+          <td>درخواست #\${item.id} - \${esc(item.opportunity_title || "-")}</td>
+          <td>\${esc(item.status || "-")}</td>
+          <td>
+            <div class="row">
+              <select class="app-status" data-id="\${item.id}">
+                <option value="draft" \${item.status === "draft" ? "selected" : ""}>draft</option>
+                <option value="submitted" \${item.status === "submitted" ? "selected" : ""}>submitted</option>
+                <option value="viewed" \${item.status === "viewed" ? "selected" : ""}>viewed</option>
+                <option value="interview" \${item.status === "interview" ? "selected" : ""}>interview</option>
+                <option value="rejected" \${item.status === "rejected" ? "selected" : ""}>rejected</option>
+                <option value="accepted" \${item.status === "accepted" ? "selected" : ""}>accepted</option>
+              </select>
+              <button class="tight update-app-status" data-id="\${item.id}">ثبت</button>
+            </div>
+          </td>
+        </tr>
+      \`);
+
+      const allRows = [...oppRows, ...appRows];
+      el("industryOpsBody").innerHTML = allRows.join("") || "<tr><td colspan='3'>موردی نیست.</td></tr>";
+    }
+
+    async function reviewSubmission(submissionId, action) {
+      const reason = action === "approve" ? "Approved from admin dashboard" : "Rejected from admin dashboard";
+      await api("/api/admin/moderation/submissions/" + submissionId + "/review", {
+        method: "POST",
+        body: JSON.stringify({ action, reason })
+      });
+    }
+
+    async function setContentPublished(contentId, isPublished) {
+      await api("/api/admin/content/" + contentId + "/publish", {
+        method: "PATCH",
+        body: JSON.stringify({ isPublished })
+      });
+    }
+
+    async function setOpportunityApproval(opportunityId, approvalStatus) {
+      await api("/api/admin/industry/opportunities/" + opportunityId + "/approval", {
+        method: "PATCH",
+        body: JSON.stringify({ approvalStatus })
+      });
+    }
+
+    async function setApplicationStatus(applicationId, status) {
+      await api("/api/admin/industry/applications/" + applicationId + "/status", {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
     }
 
     async function loadAll() {
-      await Promise.all([loadOverview(), loadUsers(), loadNotifications(), loadSubmissions()]);
+      await Promise.all([
+        loadOverview(),
+        loadUsers(),
+        loadNotifications(),
+        loadSubmissions(),
+        loadQuickBoards(),
+        loadModerationBoard(),
+        loadOpsBoard()
+      ]);
     }
 
     async function login() {
       state.adminId = el("adminIdInput").value.trim();
       state.adminKey = el("adminKeyInput").value.trim();
       if (!state.adminKey) {
-        showStatus("ADMIN_API_KEY را وارد کن.", true);
+        showStatus("ADMIN_API_KEY Ø±Ø§ ÙˆØ§Ø±Ø¯ Ú©Ù†.", true);
         return;
       }
 
@@ -627,20 +844,88 @@ router.get("/admin", (req, res) => {
         await loadAll();
         securePanels.forEach((panel) => panel.classList.remove("hidden"));
         dashboardPanel.classList.remove("hidden");
-        showStatus("پنل ادمین آماده است.");
+        showStatus("Ù¾Ù†Ù„ Ø§Ø¯Ù…ÛŒÙ† Ø¢Ù…Ø§Ø¯Ù‡ Ø§Ø³Øª.");
       } catch (error) {
-        showStatus(error.message || "خطا در ورود ادمین", true);
+        showStatus(error.message || "Ø®Ø·Ø§ Ø¯Ø± ÙˆØ±ÙˆØ¯ Ø§Ø¯Ù…ÛŒÙ†", true);
       }
     }
 
     el("loginBtn").addEventListener("click", login);
-    el("refreshAllBtn").addEventListener("click", () => loadAll().then(() => showStatus("بازخوانی شد.")).catch((e) => showStatus(e.message, true)));
+    el("refreshAllBtn").addEventListener("click", () => loadAll().then(() => showStatus("Ø¨Ø§Ø²Ø®ÙˆØ§Ù†ÛŒ Ø´Ø¯.")).catch((e) => showStatus(e.message, true)));
+    el("refreshQuickBoardsBtn").addEventListener("click", () => loadQuickBoards().then(() => showStatus("کارهای فوری بازخوانی شد.")).catch((e) => showStatus(e.message, true)));
+    el("refreshModerationBoardBtn").addEventListener("click", () => loadModerationBoard().then(() => showStatus("صف مودریشن بازخوانی شد.")).catch((e) => showStatus(e.message, true)));
+    el("refreshOpsBoardBtn").addEventListener("click", () => loadOpsBoard().then(() => showStatus("اپریشن برد بازخوانی شد.")).catch((e) => showStatus(e.message, true)));
     el("loadUsersBtn").addEventListener("click", () => loadUsers().catch((e) => showStatus(e.message, true)));
     el("createUserBtn").addEventListener("click", () => createUser().catch((e) => showStatus(e.message, true)));
     el("updateUserBtn").addEventListener("click", () => updateUser().catch((e) => showStatus(e.message, true)));
     el("deleteUserBtn").addEventListener("click", () => deleteUser().catch((e) => showStatus(e.message, true)));
     el("loadNotificationsBtn").addEventListener("click", () => loadNotifications().catch((e) => showStatus(e.message, true)));
     el("loadSubmissionsBtn").addEventListener("click", () => loadSubmissions().catch((e) => showStatus(e.message, true)));
+
+    el("moderationBoardBody").addEventListener("click", async (event) => {
+      const approveBtn = event.target.closest(".mod-approve");
+      const rejectBtn = event.target.closest(".mod-reject");
+      if (!approveBtn && !rejectBtn) return;
+
+      const submissionId = Number((approveBtn || rejectBtn).dataset.id);
+      if (!submissionId) return;
+
+      try {
+        if (approveBtn) await reviewSubmission(submissionId, "approve");
+        if (rejectBtn) await reviewSubmission(submissionId, "reject");
+        await Promise.all([loadOverview(), loadModerationBoard(), loadSubmissions(), loadQuickBoards()]);
+        showStatus("وضعیت ارسال به‌روزرسانی شد.");
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    });
+
+    el("contentOpsBody").addEventListener("click", async (event) => {
+      const btn = event.target.closest(".publish-content");
+      if (!btn) return;
+      const contentId = Number(btn.dataset.id);
+      if (!contentId) return;
+
+      try {
+        await setContentPublished(contentId, true);
+        await Promise.all([loadOverview(), loadOpsBoard()]);
+        showStatus("محتوا منتشر شد.");
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    });
+
+    el("industryOpsBody").addEventListener("click", async (event) => {
+      const approveBtn = event.target.closest(".approve-opp");
+      const rejectBtn = event.target.closest(".reject-opp");
+      const updateAppBtn = event.target.closest(".update-app-status");
+
+      try {
+        if (approveBtn) {
+          const opportunityId = Number(approveBtn.dataset.id);
+          if (!opportunityId) return;
+          await setOpportunityApproval(opportunityId, "approved");
+        } else if (rejectBtn) {
+          const opportunityId = Number(rejectBtn.dataset.id);
+          if (!opportunityId) return;
+          await setOpportunityApproval(opportunityId, "rejected");
+        } else if (updateAppBtn) {
+          const applicationId = Number(updateAppBtn.dataset.id);
+          if (!applicationId) return;
+          const selected = el("industryOpsBody").querySelector('.app-status[data-id=\"' + applicationId + '\"]');
+          const status = selected?.value;
+          if (!status) return;
+          await setApplicationStatus(applicationId, status);
+        } else {
+          return;
+        }
+
+        await Promise.all([loadOverview(), loadOpsBoard(), loadQuickBoards()]);
+        showStatus("عملیات انجام شد.");
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    });
 
     el("newIncludeProfile").addEventListener("change", (event) => {
       el("newProfileFields").classList.toggle("hidden", !event.target.checked);
@@ -660,3 +945,4 @@ router.get("/admin", (req, res) => {
 });
 
 module.exports = router;
+
