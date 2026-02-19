@@ -149,11 +149,28 @@ async function ensureParentFolderAccessible(drive, folderId) {
   } catch (error) {
     const status = error?.code || error?.response?.status;
     if (status === 404) {
+      const authenticatedAccount = await resolveAuthenticatedDriveAccount(drive);
       throw new Error(
-        `Drive folder not found or inaccessible: ${folderId}. Share folder with the authenticated Google account and verify folder id.`
+        `Drive folder not found or inaccessible: ${folderId}. Authenticated account: ${authenticatedAccount}. Share folder with this account and verify folder id.`
       );
     }
     throw error;
+  }
+}
+
+async function resolveAuthenticatedDriveAccount(drive) {
+  try {
+    const about = await drive.about.get({
+      fields: "user(emailAddress,displayName)",
+      supportsAllDrives: true
+    });
+    const email = about?.data?.user?.emailAddress;
+    if (email) return email;
+    const name = about?.data?.user?.displayName;
+    if (name) return name;
+    return "unknown";
+  } catch (error) {
+    return "unknown";
   }
 }
 

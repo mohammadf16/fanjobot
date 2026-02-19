@@ -15,6 +15,12 @@ function toBool(value, defaultValue = false) {
   return String(value).toLowerCase() === "true";
 }
 
+function normalizeId(value) {
+  if (value === undefined || value === null) return value;
+  const normalized = String(value).trim();
+  return normalized || undefined;
+}
+
 const config = {
   port: Number(process.env.PORT || 3000),
   nodeEnv: process.env.NODE_ENV || "development",
@@ -26,9 +32,9 @@ const config = {
   telegramUseWebhook: toBool(process.env.TELEGRAM_USE_WEBHOOK, false),
   telegramWebhookDomain: process.env.TELEGRAM_WEBHOOK_DOMAIN,
   telegramWebhookPath: process.env.TELEGRAM_WEBHOOK_PATH,
-  driveRootFolderId: required("DRIVE_ROOT_FOLDER_ID"),
-  driveUniversityFolderId: process.env.DRIVE_UNIVERSITY_FOLDER_ID,
-  driveIndustryFolderId: process.env.DRIVE_INDUSTRY_FOLDER_ID,
+  driveRootFolderId: normalizeId(required("DRIVE_ROOT_FOLDER_ID")),
+  driveUniversityFolderId: normalizeId(process.env.DRIVE_UNIVERSITY_FOLDER_ID),
+  driveIndustryFolderId: normalizeId(process.env.DRIVE_INDUSTRY_FOLDER_ID),
   googleOauthClientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
   googleOauthClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
   googleOauthRefreshToken: process.env.GOOGLE_OAUTH_REFRESH_TOKEN,
