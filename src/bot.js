@@ -833,7 +833,9 @@ async function attachBot(app) {
     const webhookPath = buildWebhookPath();
     const webhookUrl = buildWebhookUrl(webhookPath);
 
-    app.use(webhookPath, bot.webhookCallback(webhookPath));
+    // Express strips the mount path from req.url, so the callback path filter
+    // must receive the original full path on the root app.
+    app.use(bot.webhookCallback(webhookPath));
     await bot.telegram.setWebhook(webhookUrl);
 
     console.log(`Telegram bot webhook set: ${webhookUrl}`);
