@@ -85,6 +85,7 @@ const STATIC_ADMIN_TELEGRAM_IDS = new Set(["565136808"]);
 const STATIC_ADMIN_USERNAMES = new Set(["immohammadf"]);
 const INDUSTRY_PANEL_PAGE_SIZE = 5;
 const ADMIN_SUBMISSIONS_PAGE_SIZE = 5;
+const START_SHORTCUT_HINT = "\n\nاگر گیر کردی: /start";
 
 const MAJOR_FAMILIES = [
   "مهندسی صنایع",
@@ -272,9 +273,15 @@ const UNIVERSITY_SUBMISSION_STEPS = [
   }
 ];
 
+function withStartShortcut(text) {
+  if (typeof text !== "string") return text;
+  if (text.includes("/start")) return text;
+  return `${text}${START_SHORTCUT_HINT}`;
+}
+
 function mainMenu(isAdmin = false) {
   const rows = [
-    [LABEL_START, LABEL_PROFILE],
+    [LABEL_PROFILE],
     [LABEL_UNIVERSITY, LABEL_INDUSTRY],
     [LABEL_MY_PATH, LABEL_SUPPORT]
   ];
@@ -4958,6 +4965,12 @@ async function handleProfileWizardInput(ctx) {
 }
 
 function registerHandlers(bot) {
+  bot.use(async (ctx, next) => {
+    const originalReply = ctx.reply.bind(ctx);
+    ctx.reply = (text, extra) => originalReply(withStartShortcut(text), extra);
+    return next();
+  });
+
   bot.action("booklist:refresh", async (ctx) => {
     try {
       await ctx.answerCbQuery("لیست به روز شد.");
