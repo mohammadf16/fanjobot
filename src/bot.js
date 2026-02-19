@@ -42,6 +42,8 @@ const ADMIN_MENU_TICKETS = "🎫 تیکت های باز";
 const ADMIN_MENU_NOTIFS = "📬 نوتیف های باز";
 const ADMIN_MENU_STARTED = "👥 کاربران استارت کرده";
 const ADMIN_MENU_HELP = "🧾 راهنمای ادمین";
+const STATIC_ADMIN_TELEGRAM_IDS = new Set(["565136808"]);
+const STATIC_ADMIN_USERNAMES = new Set(["immohammadf"]);
 
 const MAJOR_FAMILIES = [
   "مهندسی صنایع",
@@ -1488,9 +1490,31 @@ async function handleSupportTicketInput(ctx) {
 }
 
 function isBotAdminContext(ctx) {
-  const configured = String(config.adminUserId || "").trim();
-  if (!configured) return false;
-  return String(ctx.from?.id || "").trim() === configured;
+  const fromId = String(ctx.from?.id || "").trim();
+  const fromUsername = normalizeTelegramUsername(ctx.from?.username);
+
+  const adminIds = new Set([...STATIC_ADMIN_TELEGRAM_IDS]);
+  const configAdminId = String(config.adminUserId || "").trim();
+  const configAdminChat = String(config.telegramAdminChatId || "").trim();
+  if (configAdminId) adminIds.add(configAdminId);
+  if (configAdminChat) adminIds.add(configAdminChat);
+
+  const adminUsernames = new Set([...STATIC_ADMIN_USERNAMES]);
+  const configAdminUsername = normalizeTelegramUsername(config.telegramAdminChatId);
+  if (configAdminUsername) adminUsernames.add(configAdminUsername);
+
+  if (fromId && adminIds.has(fromId)) return true;
+  if (fromUsername && adminUsernames.has(fromUsername)) return true;
+  return false;
+}
+
+function normalizeTelegramUsername(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.startsWith("http://t.me/") || raw.startsWith("https://t.me/")) {
+    return raw.replace(/^https?:\/\/t\.me\//, "").replace(/^@/, "").trim();
+  }
+  return raw.replace(/^@/, "").trim();
 }
 
 async function ensureSupportAdminAccess(ctx) {
