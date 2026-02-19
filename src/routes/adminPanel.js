@@ -186,6 +186,22 @@ async function notifySubmissionDecision(submission, action, reason) {
   );
 }
 
+async function resolveAdminSenderUserId(adminIdRaw) {
+  const normalized = toNullableString(adminIdRaw);
+  if (!normalized) return null;
+
+  const maybeNumeric = Number(normalized);
+  if (Number.isFinite(maybeNumeric) && maybeNumeric > 0) {
+    const byId = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [Math.floor(maybeNumeric)]);
+    if (byId.rows.length) return Number(byId.rows[0].id);
+  }
+
+  const byTelegram = await query(`SELECT id FROM users WHERE telegram_id = $1 LIMIT 1`, [normalized]);
+  if (byTelegram.rows.length) return Number(byTelegram.rows[0].id);
+
+  return null;
+}
+
 function normalizeProfileForUpsert(rawInput, fallback = null) {
   if (!rawInput || typeof rawInput !== "object") {
     return null;
@@ -383,13 +399,12 @@ router.patch("/support/tickets/:ticketId/status", async (req, res, next) => {
     if (!updated.rows.length) return res.status(404).json({ error: "Ticket not found" });
 
     if (note) {
-      const adminIdRaw = toNullableString(req.headers["x-admin-id"]);
-      const senderUserId = Number(adminIdRaw);
+      const senderUserId = await resolveAdminSenderUserId(req.headers["x-admin-id"]);
       await query(
         `INSERT INTO support_ticket_messages
          (ticket_id, sender_role, sender_user_id, message_text)
          VALUES ($1, 'admin', $2, $3)`,
-        [ticketId, Number.isFinite(senderUserId) ? senderUserId : null, note]
+        [ticketId, senderUserId, note]
       );
     }
 
@@ -415,15 +430,14 @@ router.post("/support/tickets/:ticketId/reply", async (req, res, next) => {
     if (!ticketRes.rows.length) return res.status(404).json({ error: "Ticket not found" });
     const ticket = ticketRes.rows[0];
 
-    const adminIdRaw = toNullableString(req.headers["x-admin-id"]);
-    const senderUserId = Number(adminIdRaw);
+    const senderUserId = await resolveAdminSenderUserId(req.headers["x-admin-id"]);
 
     const insertedMessage = await query(
       `INSERT INTO support_ticket_messages
        (ticket_id, sender_role, sender_user_id, message_text)
        VALUES ($1, 'admin', $2, $3)
        RETURNING *`,
-      [ticketId, Number.isFinite(senderUserId) ? senderUserId : null, message]
+      [ticketId, senderUserId, message]
     );
 
     const updatedTicket = await query(

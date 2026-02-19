@@ -1,5 +1,7 @@
 const express = require("express");
 const { query } = require("../db");
+const { config } = require("../config");
+const { isBotAvailable, sendTelegramMessage } = require("../bot");
 const { ensureSupportTables } = require("../services/supportTickets");
 
 const router = express.Router();
@@ -19,6 +21,37 @@ function toLimit(raw, fallback = 50, max = 200) {
 async function ensureUserExists(userId) {
   const userRes = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
   return Boolean(userRes.rows.length);
+}
+
+function adminChatId() {
+  return String(config.telegramAdminChatId || config.adminUserId || "").trim();
+}
+
+async function notifyAdminNewTicket(ticket, userId, messageText) {
+  const chatId = adminChatId();
+  if (!chatId || !isBotAvailable()) return { delivered: false, reason: "admin-chat-or-bot-missing" };
+
+  const lines = [
+    "🎫 تیکت جدید پشتیبانی",
+    `شماره: #${ticket.id}`,
+    `کاربر: #${userId}`,
+    `موضوع: ${ticket.subject || "-"}`,
+    "",
+    "برای مشاهده در بات:",
+    `/ticket ${ticket.id}`,
+    "برای پاسخ در بات:",
+    `/replyticket ${ticket.id} <متن پاسخ>`
+  ];
+  if (messageText) {
+    lines.push("", `پیام اولیه: ${String(messageText).slice(0, 400)}`);
+  }
+
+  try {
+    await sendTelegramMessage(chatId, lines.join("\n"));
+    return { delivered: true };
+  } catch (error) {
+    return { delivered: false, reason: error?.message || String(error) };
+  }
 }
 
 router.use(async (_req, _res, next) => {
@@ -78,9 +111,12 @@ router.post("/tickets", async (req, res, next) => {
       ]
     );
 
+    const adminNotify = await notifyAdminNewTicket(ticket, userId, message);
+
     return res.status(201).json({
       ticket,
-      message: insertedMessage.rows[0]
+      message: insertedMessage.rows[0],
+      adminNotify
     });
   } catch (error) {
     next(error);
