@@ -28,6 +28,13 @@
     return query.toString();
   }
 
+  function userProfileLink(userId, fullName) {
+    var id = Number(userId);
+    var label = String(fullName || "").trim() || (id ? "User #" + id : "-");
+    if (!id) return AdminCore.esc(label);
+    return "<a class='entity-link' href='/admin/users/" + id + "'>" + AdminCore.esc(label) + "</a>";
+  }
+
   function renderProjectsSummary(items) {
     var open = (items || []).filter(function (item) {
       return String(item.status || "").toLowerCase() === "open";
@@ -126,7 +133,7 @@
             "</td><td>" +
             AdminCore.esc(item.opportunity_title || "-") +
             "</td><td>" +
-            AdminCore.esc(item.full_name || "-") +
+            userProfileLink(item.user_id, item.full_name) +
             "</td><td>" +
             AdminCore.statusPill(item.status || "-") +
             "</td><td><div class='toolbar'><select class='app-status' data-id='" +

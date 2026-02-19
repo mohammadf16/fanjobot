@@ -27,6 +27,13 @@
     return query.toString();
   }
 
+  function userProfileLink(userId, fullName) {
+    var id = Number(userId);
+    var label = String(fullName || "").trim() || (id ? "User #" + id : "-");
+    if (!id) return AdminCore.esc(label);
+    return "<a class='entity-link' href='/admin/users/" + id + "'>" + AdminCore.esc(label) + "</a>";
+  }
+
   function sortUsers(items) {
     var sortValue = String((el("usersSortInput") || {}).value || "created_desc").trim();
     var sorted = (items || []).slice();
@@ -68,7 +75,7 @@
             "<tr><td>" +
             user.id +
             "</td><td>" +
-            AdminCore.esc(user.full_name || "-") +
+            userProfileLink(user.id, user.full_name) +
             "</td><td>" +
             AdminCore.esc(user.phone_or_email || "-") +
             "</td><td>" +
@@ -126,7 +133,7 @@
         .map(function (profile) {
           return (
             "<tr><td>" +
-            AdminCore.esc(profile.full_name || "-") +
+            userProfileLink(profile.user_id, profile.full_name) +
             "</td><td>" +
             AdminCore.esc(profile.major || "-") +
             "</td><td>" +
@@ -162,8 +169,7 @@
   }
 
   async function loadUserDetail(userId) {
-    var data = await AdminCore.api("/api/admin/users/" + userId);
-    el("usersDetailBox").textContent = AdminCore.toPretty(data);
+    window.location.assign("/admin/users/" + userId);
   }
 
   function exportUsers() {
@@ -272,7 +278,7 @@
       if (!userId) return;
       loadUserDetail(userId)
         .then(function () {
-          AdminCore.setStatus("User detail loaded.", "ok");
+          AdminCore.setStatus("Opening user profile page...", "ok");
         })
         .catch(function (error) {
           AdminCore.setStatus(error.message || "Failed to load user detail.", "bad");

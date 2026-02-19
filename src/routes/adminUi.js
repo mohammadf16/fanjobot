@@ -4,7 +4,7 @@ const { config } = require("../config");
 
 const router = express.Router();
 const assetsDir = path.join(__dirname, "..", "admin-ui", "assets");
-const assetVersion = "20260219-5";
+const assetVersion = "20260219-6";
 
 function escapeAttr(value) {
   return String(value || "")
@@ -43,11 +43,21 @@ function renderNav(active) {
     .join("");
 }
 
-function renderPage({ title, heading, subtitle, activeNav, content, scriptName }) {
+function renderPage({ title, heading, subtitle, activeNav, content, scriptName, bodyAttrs = {} }) {
   const safeTitle = escapeAttr(title);
   const safeHeading = escapeAttr(heading);
   const safeSubtitle = escapeAttr(subtitle);
   const defaultAdminId = escapeAttr(config.adminUserId || "");
+  const extraBodyAttrs = Object.entries(bodyAttrs || {})
+    .filter(
+      ([key, value]) =>
+        /^[a-zA-Z_:][a-zA-Z0-9:._-]*$/.test(String(key || "")) &&
+        value !== undefined &&
+        value !== null &&
+        String(value).trim() !== ""
+    )
+    .map(([key, value]) => ` ${key}="${escapeAttr(value)}"`)
+    .join("");
   const navHtml = renderNav(activeNav);
   const navOptions = navItems
     .map((item) => {
@@ -64,7 +74,7 @@ function renderPage({ title, heading, subtitle, activeNav, content, scriptName }
   <title>${safeTitle}</title>
   <link rel="stylesheet" href="/admin/assets/admin.css?v=${assetVersion}" />
 </head>
-<body data-default-admin-id="${defaultAdminId}">
+<body data-default-admin-id="${defaultAdminId}"${extraBodyAttrs}>
   <div class="admin-shell">
     <aside class="sidebar">
       <div class="brand">
@@ -460,6 +470,86 @@ const usersContent = `
 </section>
 `;
 
+const userProfileContent = `
+<section class="card">
+  <div class="section-head">
+    <div>
+      <h3 id="userProfileTitle">User Profile</h3>
+      <div id="userProfileSubtitle" class="meta-text">Loading user profile...</div>
+    </div>
+    <div class="toolbar">
+      <a href="/admin/users" class="btn ghost link-btn">Back to Users</a>
+      <button id="userProfileRefreshBtn" class="btn">Refresh</button>
+    </div>
+  </div>
+  <div id="userProfileHeroChips" class="chip-row"></div>
+</section>
+
+<section class="grid-2">
+  <article class="card">
+    <h3>Identity</h3>
+    <div id="userProfileIdentity" class="kv-grid"></div>
+  </article>
+  <article class="card">
+    <h3>Academic Profile</h3>
+    <div id="userProfileAcademic" class="kv-grid"></div>
+  </article>
+</section>
+
+<section class="grid-2">
+  <article class="card">
+    <h3>Skills & Interests</h3>
+    <div id="userProfileSkills" class="stack-block">No data</div>
+  </article>
+  <article class="card">
+    <h3>Support Tickets</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Subject</th><th>Status</th><th>Priority</th><th>Updated</th></tr></thead>
+        <tbody id="userProfileSupportBody"></tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<section class="grid-2">
+  <article class="card">
+    <h3>Industry Applications</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Opportunity</th><th>Status</th><th>Updated</th></tr></thead>
+        <tbody id="userProfileApplicationsBody"></tbody>
+      </table>
+    </div>
+  </article>
+  <article class="card">
+    <h3>Student Projects</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Project</th><th>Status</th><th>Updated</th></tr></thead>
+        <tbody id="userProfileProjectsBody"></tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<section class="grid-2">
+  <article class="card">
+    <h3>Content Submissions</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Title</th><th>Section/Kind</th><th>Status</th><th>Created</th></tr></thead>
+        <tbody id="userProfileSubmissionsBody"></tbody>
+      </table>
+    </div>
+  </article>
+  <article class="card">
+    <h3>Recent Events</h3>
+    <div id="userProfileEventsList" class="list-block"></div>
+  </article>
+</section>
+`;
+
 const moderationContent = `
 <section class="card">
   <div class="section-head">
@@ -824,6 +914,27 @@ router.get("/admin/users", (_req, res) => {
       activeNav: "users",
       content: usersContent,
       scriptName: "users.js"
+    })
+  );
+});
+
+router.get("/admin/users/:userId", (req, res) => {
+  const userId = Number(req.params.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return res.redirect(302, "/admin/users");
+  }
+
+  return res.type("html").send(
+    renderPage({
+      title: `Fanjobo Admin | User #${userId}`,
+      heading: `User Profile #${userId}`,
+      subtitle: "Structured profile view for projects, tickets, and activity",
+      activeNav: "users",
+      content: userProfileContent,
+      scriptName: "user-profile.js",
+      bodyAttrs: {
+        "data-user-id": String(Math.floor(userId))
+      }
     })
   );
 });

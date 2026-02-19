@@ -1000,7 +1000,28 @@ router.get("/users/:userId", async (req, res, next) => {
     if (!userId) return res.status(400).json({ error: "Invalid userId" });
 
     const userRes = await query(
-      `SELECT u.id AS user_id, u.full_name, u.phone_or_email, u.telegram_id, u.created_at, p.*
+      `SELECT u.id AS user_id,
+              u.full_name,
+              u.phone_or_email,
+              u.telegram_id,
+              u.created_at AS user_created_at,
+              CASE WHEN p.user_id IS NULL THEN FALSE ELSE TRUE END AS has_profile,
+              p.university,
+              p.city,
+              p.major,
+              p.level,
+              p.term,
+              p.interests,
+              p.skill_level,
+              p.short_term_goal,
+              p.weekly_hours,
+              p.resume_url,
+              p.github_url,
+              p.portfolio_url,
+              p.skills,
+              p.passed_courses,
+              p.created_at AS profile_created_at,
+              p.updated_at AS profile_updated_at
        FROM users u
        LEFT JOIN user_profiles p ON p.user_id = u.id
        WHERE u.id = $1
@@ -1010,7 +1031,7 @@ router.get("/users/:userId", async (req, res, next) => {
 
     if (!userRes.rows.length) return res.status(404).json({ error: "User not found" });
 
-    const [eventsRes, applicationsRes, projectsRes, submissionsRes] = await Promise.all([
+    const [eventsRes, applicationsRes, projectsRes, submissionsRes, supportTicketsRes, contentsRes] = await Promise.all([
       query(
         `SELECT id, event_type, payload, created_at
          FROM user_events
@@ -1044,6 +1065,37 @@ router.get("/users/:userId", async (req, res, next) => {
          ORDER BY created_at DESC
          LIMIT 20`,
         [userId]
+      ),
+      query(
+        `SELECT t.id,
+                t.subject,
+                t.status,
+                t.priority,
+                t.category,
+                t.created_at,
+                t.updated_at,
+                t.last_user_message_at,
+                t.last_admin_reply_at,
+                (
+                  SELECT m.message_text
+                  FROM support_ticket_messages m
+                  WHERE m.ticket_id = t.id
+                  ORDER BY m.created_at DESC, m.id DESC
+                  LIMIT 1
+                ) AS last_message
+         FROM support_tickets t
+         WHERE t.user_id = $1
+         ORDER BY COALESCE(t.updated_at, t.created_at) DESC, t.id DESC
+         LIMIT 20`,
+        [userId]
+      ),
+      query(
+        `SELECT id, title, type, kind, is_published, created_at
+         FROM contents
+         WHERE created_by_user_id = $1
+         ORDER BY created_at DESC
+         LIMIT 20`,
+        [userId]
       )
     ]);
 
@@ -1053,7 +1105,9 @@ router.get("/users/:userId", async (req, res, next) => {
         events: eventsRes.rows,
         applications: applicationsRes.rows,
         studentProjects: projectsRes.rows,
-        submissions: submissionsRes.rows
+        submissions: submissionsRes.rows,
+        supportTickets: supportTicketsRes.rows,
+        contents: contentsRes.rows
       }
     });
   } catch (error) {

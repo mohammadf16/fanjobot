@@ -24,6 +24,47 @@
     el("supportSummaryChips").innerHTML = chips.join("") || "<span class='chip muted'>No summary</span>";
   }
 
+  function userProfileLink(userId, fullName) {
+    var id = Number(userId);
+    var label = String(fullName || "").trim() || (id ? "User #" + id : "-");
+    if (!id) return AdminCore.esc(label);
+    return "<a class='entity-link' href='/admin/users/" + id + "'>" + AdminCore.esc(label) + "</a>";
+  }
+
+  function formatTicketDetail(data) {
+    var ticket = (data || {}).ticket || {};
+    var messages = Array.isArray((data || {}).messages) ? data.messages : [];
+    var lines = [
+      "Ticket #" + (ticket.id || "-"),
+      "Subject: " + (ticket.subject || "-"),
+      "Status: " + (ticket.status || "-"),
+      "Priority: " + (ticket.priority || "-"),
+      "User: " + (ticket.full_name || "-"),
+      "Contact: " + (ticket.phone_or_email || "-"),
+      "Telegram: " + (ticket.telegram_id || "-"),
+      "Created: " + (ticket.created_at || "-"),
+      "Updated: " + (ticket.updated_at || "-"),
+      "",
+      "Messages:",
+      ""
+    ];
+
+    if (!messages.length) {
+      lines.push("No messages.");
+      return lines.join("\n");
+    }
+
+    messages.forEach(function (message) {
+      var who = String(message.sender_role || "").toLowerCase() === "admin" ? "Admin" : "User";
+      var senderName = message.sender_full_name ? " (" + message.sender_full_name + ")" : "";
+      lines.push("[" + (message.created_at || "-") + "] " + who + senderName);
+      lines.push(String(message.message_text || "-"));
+      lines.push("");
+    });
+
+    return lines.join("\n");
+  }
+
   function renderRows(items) {
     rowsCache = (items || []).slice();
     el("supportTableBody").innerHTML =
@@ -39,7 +80,7 @@
             "</td><td>" +
             AdminCore.esc(row.subject || "-") +
             "</td><td>" +
-            AdminCore.esc(row.full_name || "-") +
+            userProfileLink(row.user_id, row.full_name) +
             "</td><td>" +
             AdminCore.esc(row.updated_at || row.created_at || "-") +
             "</td><td><div class='toolbar'><button class='btn ghost support-detail' data-id='" +
@@ -64,7 +105,7 @@
   async function loadDetail(ticketId) {
     var data = await AdminCore.api("/api/admin/support/tickets/" + ticketId);
     selectedTicketId = ticketId;
-    el("supportDetailBox").textContent = AdminCore.toPretty(data);
+    el("supportDetailBox").textContent = formatTicketDetail(data);
     el("supportMetaBox").textContent = "Selected ticket: #" + ticketId;
     return data;
   }
