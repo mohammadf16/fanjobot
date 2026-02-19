@@ -1,10 +1,12 @@
 (function () {
+  var rowsCache = [];
+
   function el(id) {
     return document.getElementById(id);
   }
 
   function buildQuery() {
-    var query = new URLSearchParams({ limit: "100" });
+    var query = new URLSearchParams({ limit: "140" });
     var status = String((el("moderationStatusInput") || {}).value || "").trim();
     var section = String((el("moderationSectionInput") || {}).value || "").trim();
     var kind = String((el("moderationKindInput") || {}).value || "").trim();
@@ -14,12 +16,38 @@
     return query.toString();
   }
 
+  function filterRows(items) {
+    var search = String((el("moderationSearchInput") || {}).value || "").trim().toLowerCase();
+    if (!search) return (items || []).slice();
+    return (items || []).filter(function (item) {
+      var title = String(item.title || "").toLowerCase();
+      var userId = String(item.user_id || "");
+      var id = String(item.id || "");
+      return title.includes(search) || userId.includes(search) || id.includes(search);
+    });
+  }
+
+  function selectedIds() {
+    return Array.from(document.querySelectorAll(".moderation-select:checked"))
+      .map(function (node) {
+        return Number(node.value);
+      })
+      .filter(function (id) {
+        return Number.isFinite(id) && id > 0;
+      });
+  }
+
   function renderRows(items) {
+    rowsCache = (items || []).slice();
+    var filtered = filterRows(rowsCache);
+
     el("moderationTableBody").innerHTML =
-      (items || [])
+      filtered
         .map(function (item) {
           return (
-            "<tr><td>" +
+            "<tr><td><input class='moderation-select' type='checkbox' value='" +
+            item.id +
+            "' /></td><td>" +
             item.id +
             "</td><td>" +
             AdminCore.statusPill(item.status || "-") +
@@ -42,7 +70,7 @@
             "'>Reject</button></div></td></tr>"
           );
         })
-        .join("") || "<tr><td colspan='7'>No submissions found.</td></tr>";
+        .join("") || "<tr><td colspan='8'>No submissions found.</td></tr>";
   }
 
   async function loadSubmissions() {
@@ -56,13 +84,54 @@
   }
 
   async function review(id, action) {
+    var reason = String((el("moderationReasonInput") || {}).value || "").trim();
     await AdminCore.api("/api/admin/moderation/submissions/" + id + "/review", {
       method: "POST",
       body: {
         action: action,
-        reason: "Reviewed in multi-page admin panel"
+        reason: reason || "Reviewed in upgraded admin panel"
       }
     });
+  }
+
+  async function bulkReview(action) {
+    var ids = selectedIds();
+    if (!ids.length) {
+      AdminCore.setStatus("Select at least one row for bulk action.", "warn");
+      return;
+    }
+
+    var results = await Promise.allSettled(
+      ids.map(function (id) {
+        return review(id, action);
+      })
+    );
+    var okCount = results.filter(function (result) {
+      return result.status === "fulfilled";
+    }).length;
+    var failCount = results.length - okCount;
+
+    await loadSubmissions();
+    AdminCore.setStatus(
+      "Bulk " + action + " complete. Success: " + okCount + " | Failed: " + failCount,
+      failCount ? "warn" : "ok"
+    );
+  }
+
+  function exportRows() {
+    AdminCore.downloadCsv(
+      "moderation-submissions.csv",
+      [
+        { key: "id", label: "id" },
+        { key: "status", label: "status" },
+        { key: "section", label: "section" },
+        { key: "content_kind", label: "content_kind" },
+        { key: "title", label: "title" },
+        { key: "user_id", label: "user_id" },
+        { key: "created_at", label: "created_at" }
+      ],
+      filterRows(rowsCache)
+    );
   }
 
   function bindActions() {
@@ -74,6 +143,37 @@
         .catch(function (error) {
           AdminCore.setStatus(error.message || "Failed to load submissions.", "bad");
         });
+    });
+
+    el("moderationApproveSelectedBtn").addEventListener("click", function () {
+      bulkReview("approve").catch(function (error) {
+        AdminCore.setStatus(error.message || "Bulk approve failed.", "bad");
+      });
+    });
+
+    el("moderationRejectSelectedBtn").addEventListener("click", function () {
+      bulkReview("reject").catch(function (error) {
+        AdminCore.setStatus(error.message || "Bulk reject failed.", "bad");
+      });
+    });
+
+    el("moderationExportBtn").addEventListener("click", function () {
+      exportRows();
+      AdminCore.toast("Moderation CSV exported.", "ok");
+    });
+
+    el("moderationSearchInput").addEventListener(
+      "input",
+      AdminCore.debounce(function () {
+        renderRows(rowsCache);
+      }, 200)
+    );
+
+    el("moderationSelectAll").addEventListener("change", function (event) {
+      var checked = Boolean(event.target.checked);
+      Array.from(document.querySelectorAll(".moderation-select")).forEach(function (node) {
+        node.checked = checked;
+      });
     });
 
     el("moderationTableBody").addEventListener("click", function (event) {

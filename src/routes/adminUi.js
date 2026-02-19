@@ -4,7 +4,7 @@ const { config } = require("../config");
 
 const router = express.Router();
 const assetsDir = path.join(__dirname, "..", "admin-ui", "assets");
-const assetVersion = "20260219-2";
+const assetVersion = "20260219-3";
 
 function escapeAttr(value) {
   return String(value || "")
@@ -23,13 +23,13 @@ function noStore(_req, res, next) {
 }
 
 const navItems = [
-  { key: "dashboard", label: "Dashboard", href: "/admin/dashboard" },
+  { key: "dashboard", label: "Overview", href: "/admin/dashboard" },
   { key: "users", label: "Users & Profiles", href: "/admin/users" },
   { key: "moderation", label: "Moderation", href: "/admin/moderation" },
   { key: "content", label: "Content", href: "/admin/content" },
   { key: "projects", label: "Projects & Ops", href: "/admin/projects" },
   { key: "integrations", label: "Integrations", href: "/admin/integrations" },
-  { key: "logs", label: "Logs", href: "/admin/logs" }
+  { key: "logs", label: "Logs & Runtime", href: "/admin/logs" }
 ];
 
 function renderNav(active) {
@@ -47,6 +47,12 @@ function renderPage({ title, heading, subtitle, activeNav, content, scriptName }
   const safeSubtitle = escapeAttr(subtitle);
   const defaultAdminId = escapeAttr(config.adminUserId || "");
   const navHtml = renderNav(activeNav);
+  const navOptions = navItems
+    .map((item) => {
+      const selected = item.key === activeNav ? " selected" : "";
+      return `<option value="${item.href}"${selected}>${item.label}</option>`;
+    })
+    .join("");
 
   return `<!doctype html>
 <html lang="en">
@@ -68,22 +74,39 @@ function renderPage({ title, heading, subtitle, activeNav, content, scriptName }
 
     <div class="workspace">
       <header class="topbar card">
-        <div>
-          <h2 class="page-title">${safeHeading}</h2>
-          <div class="page-subtitle">${safeSubtitle}</div>
+        <div class="topbar-main">
+          <div>
+            <h2 class="page-title">${safeHeading}</h2>
+            <div class="page-subtitle">${safeSubtitle}</div>
+          </div>
+          <div class="chip-row">
+            <span id="globalConnChip" class="chip muted">Offline</span>
+            <span id="globalSyncChip" class="chip">Last sync: -</span>
+          </div>
         </div>
+
         <div class="auth-bar">
           <input id="globalAdminIdInput" placeholder="ADMIN_USER_ID" />
           <input id="globalAdminKeyInput" type="password" placeholder="ADMIN_API_KEY" />
           <button id="globalConnectBtn" class="btn">Connect</button>
+          <button id="globalReconnectBtn" class="btn ghost">Verify</button>
           <button id="globalClearBtn" class="btn ghost">Clear</button>
         </div>
+
+        <div class="quickbar">
+          <select id="globalNavSelect">${navOptions}</select>
+          <button id="globalGoBtn" class="btn ghost">Go</button>
+          <button id="globalRefreshPageBtn" class="btn ghost">Reload Page</button>
+          <button id="globalCopyHeadersBtn" class="btn ghost">Copy Headers</button>
+        </div>
+
         <div id="globalStatusBox" class="status-box info">Enter admin credentials to load data.</div>
       </header>
 
       <main class="content">${content}</main>
     </div>
   </div>
+  <div id="globalToastHost" class="toast-host" aria-live="polite"></div>
   <script defer src="/admin/assets/admin-core.js?v=${assetVersion}"></script>
   <script defer src="/admin/assets/${scriptName}?v=${assetVersion}"></script>
 </body>
@@ -94,14 +117,33 @@ const dashboardContent = `
 <section class="card">
   <div class="section-head">
     <h3>Overview Stats</h3>
-    <button id="dashboardRefreshBtn" class="btn ghost">Refresh</button>
+    <div class="toolbar">
+      <button id="dashboardRefreshBtn" class="btn ghost">Refresh</button>
+      <button id="dashboardExportBtn" class="btn ghost">Export JSON</button>
+      <select id="dashboardAutoInterval">
+        <option value="0">Auto: OFF</option>
+        <option value="5000">Auto: 5s</option>
+        <option value="10000">Auto: 10s</option>
+        <option value="30000">Auto: 30s</option>
+      </select>
+    </div>
   </div>
   <div id="dashboardStatsGrid" class="stats-grid"></div>
 </section>
 
 <section class="grid-2">
   <article class="card">
-    <h3>Quick Queue</h3>
+    <div class="section-head">
+      <h3>Quick Queue</h3>
+      <div class="toolbar">
+        <select id="dashboardQueueTypeInput">
+          <option value="all">all</option>
+          <option value="submission">submissions</option>
+          <option value="opportunity">opportunities</option>
+          <option value="notification">notifications</option>
+        </select>
+      </div>
+    </div>
     <div id="dashboardQuickQueue" class="list-block"></div>
   </article>
   <article class="card">
@@ -153,12 +195,20 @@ const usersContent = `
         <option value="true">Has profile</option>
         <option value="false">No profile</option>
       </select>
+      <select id="usersSortInput">
+        <option value="created_desc">Newest first</option>
+        <option value="created_asc">Oldest first</option>
+        <option value="name_asc">Name A-Z</option>
+        <option value="name_desc">Name Z-A</option>
+      </select>
       <button id="usersLoadBtn" class="btn">Load</button>
+      <button id="usersExportBtn" class="btn ghost">Export Users CSV</button>
     </div>
   </div>
+  <div id="usersSummaryChips" class="chip-row"></div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Telegram</th><th>Profile</th><th>Major/Term</th><th>Created</th><th>Action</th></tr></thead>
+      <thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Telegram</th><th>Profile</th><th>Major/Term</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody id="usersTableBody"></tbody>
     </table>
   </div>
@@ -177,6 +227,7 @@ const usersContent = `
         <input id="profilesMajorInput" placeholder="Major filter (optional)" />
         <input id="profilesLevelInput" placeholder="Level filter (optional)" />
         <button id="profilesLoadBtn" class="btn ghost">Load Profiles</button>
+        <button id="profilesExportBtn" class="btn ghost">Export Profiles CSV</button>
       </div>
     </div>
     <div class="table-wrap">
@@ -207,12 +258,17 @@ const moderationContent = `
         <option value="industry">industry</option>
       </select>
       <input id="moderationKindInput" placeholder="kind (optional)" />
+      <input id="moderationSearchInput" placeholder="local search title/user id" />
+      <input id="moderationReasonInput" placeholder="review reason (optional)" />
       <button id="moderationLoadBtn" class="btn">Load</button>
+      <button id="moderationApproveSelectedBtn" class="btn">Approve Selected</button>
+      <button id="moderationRejectSelectedBtn" class="btn danger">Reject Selected</button>
+      <button id="moderationExportBtn" class="btn ghost">Export CSV</button>
     </div>
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>ID</th><th>Status</th><th>Section/Kind</th><th>Title</th><th>User</th><th>Created</th><th>Actions</th></tr></thead>
+      <thead><tr><th><input id="moderationSelectAll" type="checkbox" /></th><th>ID</th><th>Status</th><th>Section/Kind</th><th>Title</th><th>User</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody id="moderationTableBody"></tbody>
     </table>
   </div>
@@ -240,12 +296,16 @@ const contentContent = `
         <option value="true">published</option>
         <option value="false">unpublished</option>
       </select>
+      <input id="contentSearchInput" placeholder="local search title/id" />
       <button id="contentLoadBtn" class="btn">Load</button>
+      <button id="contentPublishSelectedBtn" class="btn">Publish Selected</button>
+      <button id="contentUnpublishSelectedBtn" class="btn danger">Unpublish Selected</button>
+      <button id="contentExportBtn" class="btn ghost">Export CSV</button>
     </div>
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>ID</th><th>Type/Kind</th><th>Title</th><th>Major/Term</th><th>Published</th><th>Created</th><th>Actions</th></tr></thead>
+      <thead><tr><th><input id="contentSelectAll" type="checkbox" /></th><th>ID</th><th>Type/Kind</th><th>Title</th><th>Major/Term</th><th>Published</th><th>Created</th><th>Actions</th></tr></thead>
       <tbody id="contentTableBody"></tbody>
     </table>
   </div>
@@ -269,8 +329,10 @@ const projectsContent = `
           <option value="closed">closed</option>
         </select>
         <button id="projectLoadBtn" class="btn">Load</button>
+        <button id="projectExportBtn" class="btn ghost">Export CSV</button>
       </div>
     </div>
+    <div id="projectsSummaryChips" class="chip-row"></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>ID</th><th>Title</th><th>Company</th><th>Status</th><th>Type/Level</th><th>Actions</th></tr></thead>
@@ -288,7 +350,15 @@ const projectsContent = `
   <article class="card">
     <div class="section-head">
       <h3>Opportunity Approvals</h3>
-      <button id="opportunityRefreshBtn" class="btn ghost">Refresh</button>
+      <div class="toolbar">
+        <select id="opportunityStatusInput">
+          <option value="pending">pending</option>
+          <option value="approved">approved</option>
+          <option value="rejected">rejected</option>
+          <option value="">all</option>
+        </select>
+        <button id="opportunityRefreshBtn" class="btn ghost">Refresh</button>
+      </div>
     </div>
     <div class="table-wrap">
       <table>
@@ -300,7 +370,17 @@ const projectsContent = `
   <article class="card">
     <div class="section-head">
       <h3>Applications Tracker</h3>
-      <button id="applicationsRefreshBtn" class="btn ghost">Refresh</button>
+      <div class="toolbar">
+        <select id="applicationsStatusInput">
+          <option value="">all</option>
+          <option value="submitted">submitted</option>
+          <option value="viewed">viewed</option>
+          <option value="interview">interview</option>
+          <option value="accepted">accepted</option>
+          <option value="rejected">rejected</option>
+        </select>
+        <button id="applicationsRefreshBtn" class="btn ghost">Refresh</button>
+      </div>
     </div>
     <div class="table-wrap">
       <table>
@@ -308,6 +388,7 @@ const projectsContent = `
         <tbody id="applicationsTableBody"></tbody>
       </table>
     </div>
+    <pre id="applicationDetailBox" class="codebox compact">Select/update an application to inspect.</pre>
   </article>
 </section>
 `;
@@ -317,7 +398,10 @@ const integrationsContent = `
   <article class="card">
     <div class="section-head">
       <h3>Drive Read/Write Check</h3>
-      <button id="driveRunBtn" class="btn">Run Test</button>
+      <div class="toolbar">
+        <button id="driveRunBtn" class="btn">Run Test</button>
+        <button id="driveCopyResultBtn" class="btn ghost">Copy Result</button>
+      </div>
     </div>
     <div class="toolbar">
       <input id="driveFolderInput" placeholder="Folder ID (optional; empty = DRIVE_ROOT_FOLDER_ID)" />
@@ -334,6 +418,8 @@ const integrationsContent = `
           <option value="">all</option>
         </select>
         <button id="notifLoadBtn" class="btn ghost">Load</button>
+        <button id="notifResolveAllBtn" class="btn danger">Resolve Visible Open</button>
+        <button id="notifExportBtn" class="btn ghost">Export CSV</button>
       </div>
     </div>
     <div class="table-wrap">
@@ -342,6 +428,7 @@ const integrationsContent = `
         <tbody id="notifTableBody"></tbody>
       </table>
     </div>
+    <pre id="notifDetailBox" class="codebox compact">Select a notification to inspect payload.</pre>
   </article>
 </section>
 `;
@@ -359,10 +446,18 @@ const logsContent = `
       </select>
       <input id="logsSearchInput" placeholder="search message/meta" />
       <input id="logsLimitInput" type="number" min="20" max="1000" value="300" />
+      <select id="logsAutoIntervalInput">
+        <option value="0">Auto OFF</option>
+        <option value="3000">Auto 3s</option>
+        <option value="5000">Auto 5s</option>
+        <option value="10000">Auto 10s</option>
+      </select>
       <button id="logsLoadBtn" class="btn">Load</button>
       <button id="logsAutoBtn" class="btn ghost">Auto: OFF</button>
+      <button id="logsExportBtn" class="btn ghost">Export JSON</button>
     </div>
   </div>
+  <div id="logsSummaryChips" class="chip-row"></div>
   <div id="logsMetaBox" class="meta-text"></div>
   <div id="logsListBox" class="list-block logs"></div>
 </section>

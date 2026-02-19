@@ -1,6 +1,7 @@
 (function () {
   var autoTimer = null;
   var autoEnabled = false;
+  var logsCache = [];
 
   function el(id) {
     return document.getElementById(id);
@@ -17,12 +18,32 @@
     return query.toString();
   }
 
+  function renderSummary(items) {
+    var counts = { info: 0, warn: 0, error: 0, other: 0 };
+    (items || []).forEach(function (item) {
+      var level = String(item.level || "").toLowerCase();
+      if (level === "info") counts.info += 1;
+      else if (level === "warn") counts.warn += 1;
+      else if (level === "error") counts.error += 1;
+      else counts.other += 1;
+    });
+
+    el("logsSummaryChips").innerHTML = [
+      '<span class="chip">Visible logs: ' + Number((items || []).length).toLocaleString("en-US") + "</span>",
+      '<span class="chip">Info: ' + Number(counts.info).toLocaleString("en-US") + "</span>",
+      '<span class="chip warn">Warn: ' + Number(counts.warn).toLocaleString("en-US") + "</span>",
+      '<span class="chip bad">Error: ' + Number(counts.error).toLocaleString("en-US") + "</span>"
+    ].join("");
+  }
+
   function renderLogs(items, total) {
+    logsCache = (items || []).slice();
+    renderSummary(logsCache);
     el("logsMetaBox").textContent =
-      "Matched: " + Number(total || 0).toLocaleString("en-US") + " | Showing: " + Number((items || []).length);
+      "Matched: " + Number(total || 0).toLocaleString("en-US") + " | Showing: " + Number(logsCache.length);
 
     el("logsListBox").innerHTML =
-      (items || [])
+      logsCache
         .map(function (item) {
           var level = String(item.level || "").toLowerCase();
           var klass = "list-item";
@@ -64,10 +85,19 @@
       return;
     }
 
+    var interval = Number((el("logsAutoIntervalInput") || {}).value || 0);
+    if (!Number.isFinite(interval) || interval <= 0) {
+      interval = 5000;
+    }
+
     loadLogs().catch(function () {});
     autoTimer = setInterval(function () {
       loadLogs().catch(function () {});
-    }, 4000);
+    }, interval);
+  }
+
+  function exportLogs() {
+    AdminCore.downloadJson("logs-export.json", logsCache);
   }
 
   function bindActions() {
@@ -83,6 +113,18 @@
 
     el("logsAutoBtn").addEventListener("click", function () {
       setAutoState(!autoEnabled);
+    });
+
+    el("logsAutoIntervalInput").addEventListener("change", function () {
+      if (autoEnabled) {
+        setAutoState(false);
+        setAutoState(true);
+      }
+    });
+
+    el("logsExportBtn").addEventListener("click", function () {
+      exportLogs();
+      AdminCore.toast("Logs JSON exported.", "ok");
     });
   }
 

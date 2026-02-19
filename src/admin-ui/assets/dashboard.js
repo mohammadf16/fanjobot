@@ -1,4 +1,15 @@
 (function () {
+  var autoTimer = null;
+  var lastPayload = {
+    overview: {},
+    analytics: {},
+    queue: {
+      submissions: [],
+      opportunities: [],
+      notifications: []
+    }
+  };
+
   function el(id) {
     return document.getElementById(id);
   }
@@ -34,43 +45,72 @@
     el("dashboardStatsGrid").innerHTML = html || "<div>No stats</div>";
   }
 
-  function renderQuickQueue(all) {
-    var queue = [];
-    var submissions = all[0].items || [];
-    var opportunities = all[1].items || [];
-    var notifications = all[2].items || [];
+  function queueItemsByType(type) {
+    if (type === "submission") {
+      return (lastPayload.queue.submissions || []).map(function (item) {
+        return {
+          title: "Submission #" + item.id,
+          meta: item.title || "-",
+          href: "/admin/moderation",
+          status: item.status || "pending"
+        };
+      });
+    }
 
-    submissions.forEach(function (item) {
-      queue.push(
-        '<article class="list-item"><div class="title">Submission #' +
-          item.id +
-          "</div><div class='meta'>" +
+    if (type === "opportunity") {
+      return (lastPayload.queue.opportunities || []).map(function (item) {
+        return {
+          title: "Opportunity #" + item.id,
+          meta: item.title || "-",
+          href: "/admin/projects",
+          status: item.approval_status || "pending"
+        };
+      });
+    }
+
+    if (type === "notification") {
+      return (lastPayload.queue.notifications || []).map(function (item) {
+        return {
+          title: "Notification #" + item.id,
+          meta: item.title || item.type || "-",
+          href: "/admin/integrations",
+          status: item.status || "-"
+        };
+      });
+    }
+
+    return []
+      .concat(queueItemsByType("submission"))
+      .concat(queueItemsByType("opportunity"))
+      .concat(queueItemsByType("notification"));
+  }
+
+  function renderQuickQueue() {
+    var type = String((el("dashboardQueueTypeInput") || {}).value || "all").trim();
+    var queue = queueItemsByType(type === "all" ? "" : type);
+
+    var html = queue
+      .map(function (item) {
+        return (
+          '<article class="list-item">' +
+          '<div class="title">' +
           AdminCore.esc(item.title || "-") +
-          "</div></article>"
-      );
-    });
+          "</div>" +
+          "<div class='meta'>" +
+          AdminCore.esc(item.meta || "-") +
+          "</div>" +
+          "<div class='actions'>" +
+          AdminCore.statusPill(item.status || "-") +
+          "<a class='btn ghost' href='" +
+          AdminCore.esc(item.href || "/admin/dashboard") +
+          "'>Open Queue</a>" +
+          "</div>" +
+          "</article>"
+        );
+      })
+      .join("");
 
-    opportunities.forEach(function (item) {
-      queue.push(
-        '<article class="list-item"><div class="title">Opportunity #' +
-          item.id +
-          "</div><div class='meta'>" +
-          AdminCore.esc(item.title || "-") +
-          "</div></article>"
-      );
-    });
-
-    notifications.forEach(function (item) {
-      queue.push(
-        '<article class="list-item"><div class="title">Notification #' +
-          item.id +
-          "</div><div class='meta'>" +
-          AdminCore.esc(item.title || item.type || "-") +
-          "</div></article>"
-      );
-    });
-
-    el("dashboardQuickQueue").innerHTML = queue.join("") || "<div class='meta-text'>No urgent records.</div>";
+    el("dashboardQuickQueue").innerHTML = html || "<div class='meta-text'>No urgent records.</div>";
   }
 
   function renderRecentUsers(users) {
@@ -151,7 +191,7 @@
     });
   }
 
-  async function loadAll() {
+  async function loadAll(silent) {
     var overviewData = await AdminCore.api("/api/admin/dashboard/overview");
     renderStats(overviewData.overview || {});
     renderRecentUsers(overviewData.recentUsers || []);
@@ -161,30 +201,74 @@
       AdminCore.api("/api/admin/industry/opportunities?approvalStatus=pending&limit=8"),
       AdminCore.api("/api/admin/notifications?status=open&limit=8")
     ]);
-    renderQuickQueue(queueData);
+
+    lastPayload.queue = {
+      submissions: queueData[0].items || [],
+      opportunities: queueData[1].items || [],
+      notifications: queueData[2].items || []
+    };
+    renderQuickQueue();
 
     var analyticsData = await AdminCore.api("/api/admin/dashboard/analytics");
-    renderAnalytics(analyticsData.analytics || {});
+    lastPayload.overview = overviewData.overview || {};
+    lastPayload.analytics = analyticsData.analytics || {};
+    renderAnalytics(lastPayload.analytics);
+
+    if (!silent) {
+      AdminCore.setStatus("Dashboard refreshed.", "ok");
+      AdminCore.toast("Dashboard refreshed.", "ok");
+    }
+  }
+
+  function setAutoRefresh(intervalMs) {
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+    }
+
+    var parsed = Number(intervalMs || 0);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    autoTimer = setInterval(function () {
+      loadAll(true).catch(function () {});
+    }, parsed);
   }
 
   function bindActions() {
     var refreshBtn = el("dashboardRefreshBtn");
-    if (!refreshBtn) return;
-    refreshBtn.addEventListener("click", function () {
-      loadAll()
-        .then(function () {
-          AdminCore.setStatus("Dashboard refreshed.", "ok");
-        })
-        .catch(function (error) {
+    var exportBtn = el("dashboardExportBtn");
+    var queueTypeInput = el("dashboardQueueTypeInput");
+    var autoInput = el("dashboardAutoInterval");
+
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", function () {
+        loadAll(false).catch(function (error) {
           AdminCore.setStatus(error.message || "Failed to refresh dashboard.", "bad");
         });
-    });
+      });
+    }
+
+    if (exportBtn) {
+      exportBtn.addEventListener("click", function () {
+        AdminCore.downloadJson("dashboard-export.json", lastPayload);
+        AdminCore.toast("Dashboard export downloaded.", "ok");
+      });
+    }
+
+    if (queueTypeInput) {
+      queueTypeInput.addEventListener("change", renderQuickQueue);
+    }
+
+    if (autoInput) {
+      autoInput.addEventListener("change", function () {
+        setAutoRefresh(Number(autoInput.value || 0));
+      });
+    }
   }
 
   document.addEventListener("DOMContentLoaded", bindActions);
 
   window.addEventListener("admin:auth-ready", function () {
-    loadAll().catch(function (error) {
+    loadAll(false).catch(function (error) {
       AdminCore.setStatus(error.message || "Failed to load dashboard.", "bad");
     });
   });

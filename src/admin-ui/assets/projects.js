@@ -1,18 +1,54 @@
 (function () {
+  var projectsCache = [];
+  var opportunitiesCache = [];
+  var applicationsCache = [];
+
   function el(id) {
     return document.getElementById(id);
   }
 
   function buildProjectQuery() {
-    var query = new URLSearchParams({ limit: "120" });
+    var query = new URLSearchParams({ limit: "160" });
     var status = String((el("projectStatusInput") || {}).value || "").trim();
     if (status) query.set("status", status);
     return query.toString();
   }
 
+  function buildOpportunityQuery() {
+    var query = new URLSearchParams({ limit: "120" });
+    var approval = String((el("opportunityStatusInput") || {}).value || "pending").trim();
+    if (approval) query.set("approvalStatus", approval);
+    return query.toString();
+  }
+
+  function buildApplicationsQuery() {
+    var query = new URLSearchParams({ limit: "160" });
+    var status = String((el("applicationsStatusInput") || {}).value || "").trim();
+    if (status) query.set("status", status);
+    return query.toString();
+  }
+
+  function renderProjectsSummary(items) {
+    var open = (items || []).filter(function (item) {
+      return String(item.status || "").toLowerCase() === "open";
+    }).length;
+    var closed = (items || []).filter(function (item) {
+      return String(item.status || "").toLowerCase() === "closed";
+    }).length;
+
+    el("projectsSummaryChips").innerHTML = [
+      '<span class="chip">Visible projects: ' + Number((items || []).length).toLocaleString("en-US") + "</span>",
+      '<span class="chip ok">Open: ' + Number(open).toLocaleString("en-US") + "</span>",
+      '<span class="chip bad">Closed: ' + Number(closed).toLocaleString("en-US") + "</span>"
+    ].join("");
+  }
+
   function renderProjects(items) {
+    projectsCache = (items || []).slice();
+    renderProjectsSummary(projectsCache);
+
     el("projectTableBody").innerHTML =
-      (items || [])
+      projectsCache
         .map(function (item) {
           var openBtn =
             item.status === "open"
@@ -48,8 +84,9 @@
   }
 
   function renderOpportunities(items) {
+    opportunitiesCache = (items || []).slice();
     el("opportunityTableBody").innerHTML =
-      (items || [])
+      opportunitiesCache
         .map(function (item) {
           return (
             "<tr><td>" +
@@ -67,13 +104,14 @@
             "'>Reject</button></div></td></tr>"
           );
         })
-        .join("") || "<tr><td colspan='5'>No pending opportunities.</td></tr>";
+        .join("") || "<tr><td colspan='5'>No opportunities.</td></tr>";
   }
 
   function renderApplications(items) {
+    applicationsCache = (items || []).slice();
     var statusOptions = ["draft", "submitted", "viewed", "interview", "rejected", "accepted"];
     el("applicationsTableBody").innerHTML =
-      (items || [])
+      applicationsCache
         .map(function (item) {
           var optionsHtml = statusOptions
             .map(function (status) {
@@ -121,7 +159,7 @@
   }
 
   async function loadOpportunities() {
-    var data = await AdminCore.api("/api/admin/industry/opportunities?approvalStatus=pending&limit=80");
+    var data = await AdminCore.api("/api/admin/industry/opportunities?" + buildOpportunityQuery());
     renderOpportunities(data.items || []);
   }
 
@@ -133,7 +171,7 @@
   }
 
   async function loadApplications() {
-    var data = await AdminCore.api("/api/admin/industry/applications?limit=120");
+    var data = await AdminCore.api("/api/admin/industry/applications?" + buildApplicationsQuery());
     renderApplications(data.items || []);
   }
 
@@ -142,6 +180,22 @@
       method: "PATCH",
       body: { status: status }
     });
+  }
+
+  function exportProjects() {
+    AdminCore.downloadCsv(
+      "projects-export.csv",
+      [
+        { key: "id", label: "id" },
+        { key: "title", label: "title" },
+        { key: "company_name", label: "company_name" },
+        { key: "status", label: "status" },
+        { key: "type", label: "type" },
+        { key: "level", label: "level" },
+        { key: "created_at", label: "created_at" }
+      ],
+      projectsCache
+    );
   }
 
   async function loadAll() {
@@ -157,6 +211,11 @@
         .catch(function (error) {
           AdminCore.setStatus(error.message || "Failed to load projects.", "bad");
         });
+    });
+
+    el("projectExportBtn").addEventListener("click", function () {
+      exportProjects();
+      AdminCore.toast("Projects CSV exported.", "ok");
     });
 
     el("opportunityRefreshBtn").addEventListener("click", function () {
@@ -177,6 +236,13 @@
         .catch(function (error) {
           AdminCore.setStatus(error.message || "Failed to refresh applications.", "bad");
         });
+    });
+
+    el("opportunityStatusInput").addEventListener("change", function () {
+      loadOpportunities().catch(function () {});
+    });
+    el("applicationsStatusInput").addEventListener("change", function () {
+      loadApplications().catch(function () {});
     });
 
     el("projectTableBody").addEventListener("click", function (event) {
@@ -240,6 +306,14 @@
 
       updateApplicationStatus(applicationId, nextStatus)
         .then(function () {
+          var matching = applicationsCache.find(function (item) {
+            return Number(item.id) === applicationId;
+          });
+          el("applicationDetailBox").textContent = AdminCore.toPretty({
+            applicationId: applicationId,
+            previous: matching || null,
+            nextStatus: nextStatus
+          });
           return loadApplications();
         })
         .then(function () {

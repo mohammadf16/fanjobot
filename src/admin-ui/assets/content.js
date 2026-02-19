@@ -1,10 +1,12 @@
 (function () {
+  var rowsCache = [];
+
   function el(id) {
     return document.getElementById(id);
   }
 
   function buildQuery() {
-    var query = new URLSearchParams({ limit: "150" });
+    var query = new URLSearchParams({ limit: "200" });
     var type = String((el("contentTypeInput") || {}).value || "").trim();
     var kind = String((el("contentKindInput") || {}).value || "").trim();
     var published = String((el("contentPublishedInput") || {}).value || "").trim();
@@ -14,14 +16,41 @@
     return query.toString();
   }
 
+  function filterRows(items) {
+    var search = String((el("contentSearchInput") || {}).value || "").trim().toLowerCase();
+    if (!search) return (items || []).slice();
+    return (items || []).filter(function (item) {
+      var title = String(item.title || "").toLowerCase();
+      var kind = String(item.kind || "").toLowerCase();
+      var type = String(item.type || "").toLowerCase();
+      var id = String(item.id || "");
+      return title.includes(search) || kind.includes(search) || type.includes(search) || id.includes(search);
+    });
+  }
+
+  function selectedIds() {
+    return Array.from(document.querySelectorAll(".content-select:checked"))
+      .map(function (node) {
+        return Number(node.value);
+      })
+      .filter(function (id) {
+        return Number.isFinite(id) && id > 0;
+      });
+  }
+
   function renderRows(items) {
+    rowsCache = (items || []).slice();
+    var filtered = filterRows(rowsCache);
+
     el("contentTableBody").innerHTML =
-      (items || [])
+      filtered
         .map(function (item) {
           var nextState = !item.is_published;
           var nextLabel = item.is_published ? "Unpublish" : "Publish";
           return (
-            "<tr><td>" +
+            "<tr><td><input class='content-select' type='checkbox' value='" +
+            item.id +
+            "' /></td><td>" +
             item.id +
             "</td><td>" +
             AdminCore.esc(item.type || "-") +
@@ -48,7 +77,7 @@
             "</button></div></td></tr>"
           );
         })
-        .join("") || "<tr><td colspan='7'>No content records.</td></tr>";
+        .join("") || "<tr><td colspan='8'>No content records.</td></tr>";
   }
 
   async function loadContent() {
@@ -68,6 +97,47 @@
     });
   }
 
+  async function bulkPublish(nextState) {
+    var ids = selectedIds();
+    if (!ids.length) {
+      AdminCore.setStatus("Select at least one content row.", "warn");
+      return;
+    }
+
+    var results = await Promise.allSettled(
+      ids.map(function (id) {
+        return setPublishState(id, nextState);
+      })
+    );
+
+    var okCount = results.filter(function (result) {
+      return result.status === "fulfilled";
+    }).length;
+    var failCount = results.length - okCount;
+    await loadContent();
+    AdminCore.setStatus(
+      "Bulk publish update complete. Success: " + okCount + " | Failed: " + failCount,
+      failCount ? "warn" : "ok"
+    );
+  }
+
+  function exportRows() {
+    AdminCore.downloadCsv(
+      "content-library.csv",
+      [
+        { key: "id", label: "id" },
+        { key: "type", label: "type" },
+        { key: "kind", label: "kind" },
+        { key: "title", label: "title" },
+        { key: "major", label: "major" },
+        { key: "term", label: "term" },
+        { key: "is_published", label: "is_published" },
+        { key: "created_at", label: "created_at" }
+      ],
+      filterRows(rowsCache)
+    );
+  }
+
   function bindActions() {
     el("contentLoadBtn").addEventListener("click", function () {
       loadContent()
@@ -77,6 +147,37 @@
         .catch(function (error) {
           AdminCore.setStatus(error.message || "Failed to load content list.", "bad");
         });
+    });
+
+    el("contentPublishSelectedBtn").addEventListener("click", function () {
+      bulkPublish(true).catch(function (error) {
+        AdminCore.setStatus(error.message || "Bulk publish failed.", "bad");
+      });
+    });
+
+    el("contentUnpublishSelectedBtn").addEventListener("click", function () {
+      bulkPublish(false).catch(function (error) {
+        AdminCore.setStatus(error.message || "Bulk unpublish failed.", "bad");
+      });
+    });
+
+    el("contentExportBtn").addEventListener("click", function () {
+      exportRows();
+      AdminCore.toast("Content CSV exported.", "ok");
+    });
+
+    el("contentSearchInput").addEventListener(
+      "input",
+      AdminCore.debounce(function () {
+        renderRows(rowsCache);
+      }, 220)
+    );
+
+    el("contentSelectAll").addEventListener("change", function (event) {
+      var checked = Boolean(event.target.checked);
+      Array.from(document.querySelectorAll(".content-select")).forEach(function (node) {
+        node.checked = checked;
+      });
     });
 
     el("contentTableBody").addEventListener("click", function (event) {
