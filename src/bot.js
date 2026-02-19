@@ -114,21 +114,26 @@ const PROFILE_STEPS = [
 const UNIVERSITY_SUBMISSION_BACK = "لغو ارسال محتوا";
 const UNIVERSITY_SUBMISSION_DONE = "ثبت نهایی ارسال";
 const UNIVERSITY_SUBMISSION_KINDS = [
-  { key: "course", label: "درس" },
-  { key: "professor", label: "استاد" },
-  { key: "note", label: "جزوه" },
-  { key: "book", label: "کتاب" },
-  { key: "resource", label: "منبع" },
-  { key: "video", label: "ویدیو" },
-  { key: "sample-question", label: "نمونه سوال" },
-  { key: "summary", label: "خلاصه" },
-  { key: "exam-tip", label: "نکته امتحانی" }
+  { key: "course", label: "دروس دانشگاه" },
+  { key: "professor", label: "اساتید دانشگاه" },
+  { key: "note", label: "جزوه های دانشگاه" },
+  { key: "book", label: "کتاب های دانشگاه" },
+  { key: "resource", label: "منابع دانشگاه" },
+  { key: "exam-tip", label: "نکات امتحان دانشگاه" }
 ];
 
 const UNIVERSITY_SUBMISSION_STEPS = [
   {
     key: "contentKind",
-    question: "نوع محتوا را انتخاب کن:"
+    question: "محتوای ارسالی مناسب کدام بخش دانشگاه است؟"
+  },
+  {
+    key: "courseName",
+    question: "این محتوا برای کدام درس است؟ (مثلا: ساختمان داده)"
+  },
+  {
+    key: "professorName",
+    question: "این محتوا برای کدام استاد است؟ (اختیاری - برای رد: «رد»)"
   },
   {
     key: "purpose",
@@ -431,6 +436,8 @@ async function askSubmissionStep(ctx, session) {
     await ctx.reply(
       `${step.question}\n\n` +
       `نوع: ${session.answers.contentKindLabel}\n` +
+      `درس مرتبط: ${session.answers.courseName || "ثبت نشده"}\n` +
+      `استاد مرتبط: ${session.answers.professorName || "ثبت نشده"}\n` +
       `عنوان: ${session.answers.title}\n` +
       `هدف: ${session.answers.purpose}\n` +
       `روش استفاده: ${session.answers.usageGuide}\n` +
@@ -440,7 +447,7 @@ async function askSubmissionStep(ctx, session) {
     return;
   }
 
-  if (step.key === "externalLink" || step.key === "tags") {
+  if (step.key === "professorName" || step.key === "externalLink" || step.key === "tags") {
     await ctx.reply(step.question, submissionSimpleKeyboard());
     return;
   }
@@ -466,7 +473,7 @@ async function startUniversitySubmissionWizard(ctx) {
 
 function parseSubmissionStepValue(step, text) {
   const raw = String(text || "").trim();
-  if (!raw && !["externalLink", "tags"].includes(step.key)) {
+  if (!raw && !["professorName", "externalLink", "tags"].includes(step.key)) {
     return { ok: false, message: "این فیلد الزامی است." };
   }
 
@@ -474,6 +481,17 @@ function parseSubmissionStepValue(step, text) {
     const kind = getSubmissionKindByLabel(raw);
     if (!kind) return { ok: false, message: "نوع محتوا را از دکمه ها انتخاب کن." };
     return { ok: true, value: { contentKind: kind.key, contentKindLabel: kind.label } };
+  }
+
+  if (step.key === "courseName") {
+    if (raw.length < 2) return { ok: false, message: "نام درس معتبر وارد کن." };
+    return { ok: true, value: raw };
+  }
+
+  if (step.key === "professorName") {
+    if (isSkipText(raw)) return { ok: true, value: null };
+    if (raw.length < 2) return { ok: false, message: "نام استاد معتبر وارد کن یا بزن: رد" };
+    return { ok: true, value: raw };
   }
 
   if (step.key === "title") {
@@ -520,6 +538,9 @@ async function saveUniversitySubmission(session) {
   const term = profileRes.rows[0]?.term || null;
 
   const composedDescription = [
+    `بخش مقصد: ${session.answers.contentKindLabel}`,
+    `درس مرتبط: ${session.answers.courseName || "ثبت نشده"}`,
+    `استاد مرتبط: ${session.answers.professorName || "ثبت نشده"}`,
     `هدف: ${session.answers.purpose}`,
     `نحوه استفاده: ${session.answers.usageGuide}`,
     session.answers.description
