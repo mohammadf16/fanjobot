@@ -9,6 +9,12 @@ function toLimit(raw, fallback = 20, max = 100) {
   return Math.min(max, Math.floor(parsed));
 }
 
+function toOffset(raw) {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.floor(parsed);
+}
+
 router.get("/paths", async (req, res, next) => {
   try {
     const result = await query(
@@ -44,6 +50,39 @@ router.get("/opportunities", async (req, res, next) => {
     );
 
     res.json({ items: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/resources", async (req, res, next) => {
+  try {
+    const category = String(req.query.category || "").trim().toLowerCase() || null;
+    const q = String(req.query.q || "").trim().toLowerCase();
+    const like = q ? `%${q}%` : null;
+    const limit = toLimit(req.query.limit, 20, 100);
+    const offset = toOffset(req.query.offset);
+
+    const result = await query(
+      `SELECT c.id,
+              c.title,
+              c.description,
+              c.kind AS category,
+              c.tags,
+              c.estimated_hours,
+              c.created_at,
+              NULL AS url
+       FROM contents c
+       WHERE c.type = 'industry'
+         AND c.is_published = TRUE
+         AND ($1::text IS NULL OR LOWER(c.kind) = $1)
+         AND ($2::text IS NULL OR LOWER(c.title) LIKE $2 OR LOWER(c.description) LIKE $2)
+       ORDER BY c.created_at DESC, c.id DESC
+       LIMIT $3 OFFSET $4`,
+      [category, like, limit, offset]
+    );
+
+    res.json({ items: result.rows, limit, offset });
   } catch (error) {
     next(error);
   }

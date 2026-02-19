@@ -1,5 +1,5 @@
 const express = require("express");
-const { query } = require("../db");
+const { query, executeSqlScript, getDbProvider } = require("../db");
 const {
   normalizeSkillName,
   buildSkillMap,
@@ -9,6 +9,45 @@ const {
 } = require("../services/industryHub");
 
 const router = express.Router();
+let ensureIndustryProfilePromise = null;
+
+const INDUSTRY_PROFILE_POSTGRES_SQL = `
+CREATE TABLE IF NOT EXISTS industry_student_profiles (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  target_job TEXT,
+  experience_level TEXT,
+  preferred_location TEXT,
+  preferred_job_type TEXT,
+  expected_salary INTEGER,
+  about TEXT,
+  career_summary TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_industry_student_profiles_user_id
+  ON industry_student_profiles(user_id);
+`;
+
+const INDUSTRY_PROFILE_SQLITE_SQL = `
+CREATE TABLE IF NOT EXISTS industry_student_profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  target_job TEXT,
+  experience_level TEXT,
+  preferred_location TEXT,
+  preferred_job_type TEXT,
+  expected_salary INTEGER,
+  about TEXT,
+  career_summary TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_industry_student_profiles_user_id
+  ON industry_student_profiles(user_id);
+`;
 
 function toLimit(raw, fallback = 20, max = 100) {
   const parsed = Number(raw);
@@ -31,10 +70,38 @@ function toArray(raw) {
     .filter(Boolean);
 }
 
+function toNullableString(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+function toNullableInt(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.floor(parsed));
+}
+
 function normalizeApplicationStatus(raw, fallback = "draft") {
   const allowed = new Set(["draft", "submitted", "viewed", "interview", "rejected", "accepted"]);
   const status = String(raw || fallback).toLowerCase();
   return allowed.has(status) ? status : fallback;
+}
+
+async function ensureIndustryProfileTable() {
+  if (ensureIndustryProfilePromise) return ensureIndustryProfilePromise;
+
+  ensureIndustryProfilePromise = (async () => {
+    const provider = getDbProvider();
+    const sql = provider === "postgres" ? INDUSTRY_PROFILE_POSTGRES_SQL : INDUSTRY_PROFILE_SQLITE_SQL;
+    await executeSqlScript(sql);
+  })().catch((error) => {
+    ensureIndustryProfilePromise = null;
+    throw error;
+  });
+
+  return ensureIndustryProfilePromise;
 }
 
 async function getStudentContext(userId) {
@@ -134,6 +201,15 @@ async function listProjects(context, filters = {}) {
   return items;
 }
 
+router.use(async (_req, _res, next) => {
+  try {
+    await ensureIndustryProfileTable();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/dashboard/:userId", async (req, res, next) => {
   try {
     const userId = Number(req.params.userId);
@@ -164,6 +240,79 @@ router.get("/dashboard/:userId", async (req, res, next) => {
         }
       }
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/profile/:userId", async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: "Invalid userId" });
+
+    const result = await query(
+      `SELECT u.id AS user_id,
+              COALESCE(isp.target_job, up.short_term_goal) AS target_job,
+              COALESCE(isp.experience_level, up.skill_level) AS experience_level,
+              COALESCE(isp.preferred_location, up.city) AS preferred_location,
+              isp.preferred_job_type,
+              isp.expected_salary,
+              isp.about,
+              isp.career_summary,
+              COALESCE(isp.updated_at, up.updated_at, u.created_at) AS updated_at
+       FROM users u
+       LEFT JOIN industry_student_profiles isp ON isp.user_id = u.id
+       LEFT JOIN user_profiles up ON up.user_id = u.id
+       WHERE u.id = $1
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!result.rows.length) return res.status(404).json({ error: "User not found" });
+    res.json({ profile: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/profile/:userId", async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    const bodyUserId = req.body?.userId ? Number(req.body.userId) : userId;
+    if (!userId || !bodyUserId || userId !== bodyUserId) {
+      return res.status(400).json({ error: "Invalid userId" });
+    }
+
+    const userRes = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    if (!userRes.rows.length) return res.status(404).json({ error: "User not found" });
+
+    const targetJob = toNullableString(req.body?.targetJob);
+    const experienceLevel = toNullableString(req.body?.experienceLevel);
+    const preferredLocation = toNullableString(req.body?.preferredLocation);
+    const preferredJobType = toNullableString(req.body?.preferredJobType);
+    const expectedSalary = toNullableInt(req.body?.expectedSalary);
+    const about = toNullableString(req.body?.about);
+    const careerSummary = toNullableString(req.body?.careerSummary);
+
+    const upsert = await query(
+      `INSERT INTO industry_student_profiles
+       (user_id, target_job, experience_level, preferred_location, preferred_job_type, expected_salary, about, career_summary, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       ON CONFLICT (user_id)
+       DO UPDATE SET
+         target_job = EXCLUDED.target_job,
+         experience_level = EXCLUDED.experience_level,
+         preferred_location = EXCLUDED.preferred_location,
+         preferred_job_type = EXCLUDED.preferred_job_type,
+         expected_salary = EXCLUDED.expected_salary,
+         about = EXCLUDED.about,
+         career_summary = EXCLUDED.career_summary,
+         updated_at = NOW()
+       RETURNING *`,
+      [userId, targetJob, experienceLevel, preferredLocation, preferredJobType, expectedSalary, about, careerSummary]
+    );
+
+    res.json({ profile: upsert.rows[0] });
   } catch (error) {
     next(error);
   }
@@ -520,6 +669,92 @@ router.get("/saved/:userId", async (req, res, next) => {
     );
 
     res.json({ items: rows.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/saved-opportunities/:userId", async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: "Invalid userId" });
+
+    const context = await getStudentContext(userId);
+    const safeContext = context || { levelNum: 1, city: null, skillMap: new Map() };
+    const rows = await query(
+      `SELECT s.id AS saved_id,
+              s.follow_up_status,
+              s.follow_up_note,
+              s.updated_at AS saved_updated_at,
+              o.id AS opportunity_id,
+              o.title,
+              o.description,
+              o.opportunity_type,
+              o.level,
+              o.location_mode,
+              o.city,
+              o.hours_per_week,
+              o.salary_min,
+              o.salary_max,
+              o.deadline_at,
+              o.required_skills,
+              c.name AS company_name,
+              c.city AS company_city
+       FROM industry_saved_opportunities s
+       JOIN industry_opportunities o ON o.id = s.opportunity_id
+       LEFT JOIN industry_companies c ON c.id = o.company_id
+       WHERE s.user_id = $1
+       ORDER BY s.updated_at DESC
+       LIMIT $2`,
+      [userId, toLimit(req.query.limit, 20, 100)]
+    );
+
+    const items = rows.rows.map((item) => ({
+      id: item.opportunity_id,
+      saved_id: item.saved_id,
+      title: item.title,
+      description: item.description,
+      opportunity_type: item.opportunity_type,
+      level: item.level,
+      location_mode: item.location_mode,
+      city: item.city,
+      hours_per_week: item.hours_per_week,
+      salary_min: item.salary_min,
+      salary_max: item.salary_max,
+      deadline_at: item.deadline_at,
+      required_skills: item.required_skills,
+      company_name: item.company_name,
+      company_city: item.company_city,
+      follow_up_status: item.follow_up_status,
+      follow_up_note: item.follow_up_note,
+      updated_at: item.saved_updated_at,
+      matchScore: scoreOpportunity(item, safeContext)
+    }));
+
+    res.json({ items });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/saved-opportunities/:opportunityId", async (req, res, next) => {
+  try {
+    const opportunityId = Number(req.params.opportunityId);
+    const userId = Number(req.body?.userId || req.query?.userId);
+    if (!opportunityId || !userId) {
+      return res.status(400).json({ error: "opportunityId and userId are required" });
+    }
+
+    const removed = await query(
+      `DELETE FROM industry_saved_opportunities
+       WHERE user_id = $1
+         AND opportunity_id = $2
+       RETURNING *`,
+      [userId, opportunityId]
+    );
+
+    if (!removed.rows.length) return res.status(404).json({ error: "Saved opportunity not found" });
+    res.json({ removed: true, item: removed.rows[0] });
   } catch (error) {
     next(error);
   }

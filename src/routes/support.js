@@ -18,6 +18,20 @@ function toLimit(raw, fallback = 50, max = 200) {
   return Math.min(max, Math.floor(parsed));
 }
 
+async function updateTicketStatusForUser(userId, ticketId, status) {
+  const updated = await query(
+    `UPDATE support_tickets
+     SET status = $1,
+         updated_at = NOW()
+     WHERE id = $2
+       AND user_id = $3
+     RETURNING *`,
+    [status, ticketId, userId]
+  );
+
+  return updated.rows[0] || null;
+}
+
 async function ensureUserExists(userId) {
   const userRes = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
   return Boolean(userRes.rows.length);
@@ -292,17 +306,23 @@ router.patch("/my/:userId/tickets/:ticketId/status", async (req, res, next) => {
       return res.status(400).json({ error: "status must be open or closed" });
     }
 
-    const updated = await query(
-      `UPDATE support_tickets
-       SET status = $1,
-           updated_at = NOW()
-       WHERE id = $2
-         AND user_id = $3
-       RETURNING *`,
-      [status, ticketId, userId]
-    );
-    if (!updated.rows.length) return res.status(404).json({ error: "Ticket not found" });
-    return res.json({ ticket: updated.rows[0] });
+    const ticket = await updateTicketStatusForUser(userId, ticketId, status);
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    return res.json({ ticket });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/my/:userId/tickets/:ticketId/close", async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    const ticketId = Number(req.params.ticketId);
+    if (!userId || !ticketId) return res.status(400).json({ error: "Invalid userId or ticketId" });
+
+    const ticket = await updateTicketStatusForUser(userId, ticketId, "closed");
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    return res.json({ ticket });
   } catch (error) {
     next(error);
   }

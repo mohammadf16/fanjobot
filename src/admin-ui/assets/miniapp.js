@@ -495,15 +495,23 @@
   }
 
   async function loadIndustryHome() {
-    await Promise.all([
-      loadIndustryProfile(),
-      loadIndustryOpportunities(),
-      loadIndustryProjects(),
-      loadIndustryApplications(),
-      loadIndustryWorkspace(),
-      loadIndustrySavedOpportunities(),
-      loadIndustryResources()
-    ]);
+    var tasks = [
+      loadIndustryProfile,
+      loadIndustryOpportunities,
+      loadIndustryProjects,
+      loadIndustryApplications,
+      loadIndustryWorkspace,
+      loadIndustrySavedOpportunities,
+      loadIndustryResources
+    ];
+    var results = await Promise.allSettled(tasks.map(function (fn) { return fn(); }));
+    var failed = results.filter(function (entry) { return entry.status === "rejected"; });
+    if (failed.length === tasks.length) {
+      throw (failed[0] && failed[0].reason) || new Error("Industry panel failed to load");
+    }
+    if (failed.length) {
+      toast("Some industry sections could not be loaded.", "warn");
+    }
   }
 
   async function loadIndustryOpportunities() {
@@ -850,7 +858,10 @@
 
   async function closeSupportTicket(ticketId) {
     var userId = ensureUser();
-    await api("/api/support/my/" + userId + "/tickets/" + ticketId + "/close", { method: "POST", body: {} });
+    await api("/api/support/my/" + userId + "/tickets/" + ticketId + "/status", {
+      method: "PATCH",
+      body: { status: "closed" }
+    });
     toast("تیکت بسته شد", "ok");
     loadSupportTickets().catch(onError);
   }
