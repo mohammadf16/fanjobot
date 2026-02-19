@@ -1,7 +1,9 @@
 ﻿const { Telegraf, Markup } = require("telegraf");
+const fs = require("fs");
+const path = require("path");
 const { config } = require("./config");
 const { query } = require("./db");
-const { uploadBufferToDrive } = require("./services/googleDrive");
+const { uploadBufferToDrive, downloadDriveFileToPath } = require("./services/googleDrive");
 const { logInfo, logError } = require("./services/logger");
 const {
   buildSkillMap,
@@ -15,6 +17,13 @@ const {
 const profileSessions = new Map();
 const submissionSessions = new Map();
 const pathSessions = new Map();
+const bookDownloadLocks = new Map();
+
+const BOOK_CACHE_DIR = path.join(process.cwd(), "tmp", "telegram-book-cache");
+const BOOK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const BOOK_CACHE_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const BOOK_PANEL_LIMIT = 12;
+let bookCacheSweepTimer = null;
 
 const LABEL_START = "🚀 شروع";
 const LABEL_PROFILE = "🧾 تکمیل پروفایل";
@@ -434,43 +443,7 @@ async function loadUserAcademicProfile(ctx) {
 
 async function getUniversityItemsByKind({ major, term, kind, limit = 5 }) {
   const res = await query(
-    `SELECT c.id, c.title, c.description,
-            (
-              SELECT cf.drive_link
-              FROM content_files cf
-              WHERE cf.content_id = c.id
-              ORDER BY cf.created_at DESC, cf.id DESC
-              LIMIT 1
-            ) AS drive_link,
-            (
-              SELECT cf.drive_file_id
-              FROM content_files cf
-              WHERE cf.content_id = c.id
-              ORDER BY cf.created_at DESC, cf.id DESC
-              LIMIT 1
-            ) AS drive_file_id,
-            (
-              SELECT s.external_link
-              FROM community_content_submissions s
-              WHERE s.status = 'approved'
-                AND s.section = 'university'
-                AND s.content_kind = c.kind
-                AND s.title = c.title
-                AND s.user_id = c.created_by_user_id
-              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
-              LIMIT 1
-            ) AS submission_external_link,
-            (
-              SELECT s.tags
-              FROM community_content_submissions s
-              WHERE s.status = 'approved'
-                AND s.section = 'university'
-                AND s.content_kind = c.kind
-                AND s.title = c.title
-                AND s.user_id = c.created_by_user_id
-              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
-              LIMIT 1
-            ) AS submission_tags
+    `SELECT c.id, c.title
      FROM contents c
      WHERE type = 'university'
        AND kind = $1
@@ -492,34 +465,305 @@ function extractDriveFileIdFromTags(tags) {
   return String(entry).replace("_drive_file_id:", "").trim() || null;
 }
 
-function buildDriveDownloadLink(fileId) {
-  if (!fileId) return null;
-  return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
+function extractDriveFileIdFromLink(link) {
+  const raw = String(link || "").trim();
+  if (!raw) return null;
+
+  const fromPath = raw.match(/\/d\/([A-Za-z0-9_-]+)/);
+  if (fromPath?.[1]) return fromPath[1];
+
+  const fromQuery = raw.match(/[?&]id=([A-Za-z0-9_-]+)/);
+  if (fromQuery?.[1]) return fromQuery[1];
+
+  return null;
 }
 
-function resolveItemDownloadLink(item) {
-  const byFileId = item.drive_file_id || extractDriveFileIdFromTags(item.submission_tags);
-  if (byFileId) return buildDriveDownloadLink(byFileId);
-  if (item.drive_link) return item.drive_link;
-  if (item.submission_external_link) return item.submission_external_link;
+function resolveItemDriveFileId(item) {
+  const byContentFile = String(item?.drive_file_id || "").trim();
+  if (byContentFile) return byContentFile;
+
+  const bySubmissionTags = extractDriveFileIdFromTags(item?.submission_tags);
+  if (bySubmissionTags) return bySubmissionTags;
+
+  const byDriveLink = extractDriveFileIdFromLink(item?.drive_link);
+  if (byDriveLink) return byDriveLink;
+
+  const byExternalLink = extractDriveFileIdFromLink(item?.submission_external_link);
+  if (byExternalLink) return byExternalLink;
+
   return null;
 }
 
 function formatList(items) {
   if (!items.length) return "موردی ثبت نشده.";
-  return items
-    .map((item, index) => {
-      const rows = [`${index + 1}. ${item.title}`];
-      const downloadLink = resolveItemDownloadLink(item);
-      if (downloadLink) {
-        rows.push(`دانلود: ${downloadLink}`);
-      } else {
-        rows.push("فایل برای دانلود ثبت نشده.");
-      }
+  return items.map((item, index) => `${index + 1}. ${item.title}`).join("\n");
+}
 
-      return rows.join("\n");
-    })
-    .join("\n\n");
+function sanitizeBookFileName(title) {
+  const base = String(title || "book")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+
+  return `${base || "book"}.pdf`;
+}
+
+function buildBookPanelKeyboard(items) {
+  const rows = items.map((item) => {
+    const labelBase = String(item.title || "کتاب بدون عنوان")
+      .replace(/\s+/g, " ")
+      .trim();
+    const label = labelBase.length > 48 ? `${labelBase.slice(0, 45)}...` : labelBase;
+    return [Markup.button.callback(`📚 ${label}`, `bookdl:${item.id}`)];
+  });
+
+  rows.push([Markup.button.callback("🔄 بروزرسانی لیست", "booklist:refresh")]);
+  return Markup.inlineKeyboard(rows);
+}
+
+async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_LIMIT }) {
+  const res = await query(
+    `SELECT c.id, c.title,
+            (
+              SELECT cf.drive_file_id
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_file_id,
+            (
+              SELECT cf.drive_link
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_link,
+            (
+              SELECT s.external_link
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = 'book'
+                AND s.title = c.title
+                AND s.user_id = c.created_by_user_id
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_external_link,
+            (
+              SELECT s.tags
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = 'book'
+                AND s.title = c.title
+                AND s.user_id = c.created_by_user_id
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_tags
+     FROM contents c
+     WHERE c.type = 'university'
+       AND c.kind = 'book'
+       AND c.is_published = TRUE
+       AND ($1::text IS NULL OR c.major = $1 OR c.major IS NULL)
+       AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
+     ORDER BY c.created_at DESC
+     LIMIT $3`,
+    [major || null, term || null, limit]
+  );
+
+  return res.rows;
+}
+
+async function getUniversityBookById({ contentId, major, term }) {
+  const res = await query(
+    `SELECT c.id, c.title,
+            (
+              SELECT cf.drive_file_id
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_file_id,
+            (
+              SELECT cf.drive_link
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_link,
+            (
+              SELECT s.external_link
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = 'book'
+                AND s.title = c.title
+                AND s.user_id = c.created_by_user_id
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_external_link,
+            (
+              SELECT s.tags
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = 'book'
+                AND s.title = c.title
+                AND s.user_id = c.created_by_user_id
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_tags
+     FROM contents c
+     WHERE c.id = $1
+       AND c.type = 'university'
+       AND c.kind = 'book'
+       AND c.is_published = TRUE
+       AND ($2::text IS NULL OR c.major = $2 OR c.major IS NULL)
+       AND ($3::text IS NULL OR c.term = $3 OR c.term IS NULL)
+     LIMIT 1`,
+    [contentId, major || null, term || null]
+  );
+
+  return res.rows[0] || null;
+}
+
+async function cleanupBookCache() {
+  try {
+    const entries = await fs.promises.readdir(BOOK_CACHE_DIR, { withFileTypes: true });
+    const now = Date.now();
+
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isFile())
+        .map(async (entry) => {
+          const fullPath = path.join(BOOK_CACHE_DIR, entry.name);
+          const stat = await fs.promises.stat(fullPath);
+          if (now - stat.mtimeMs > BOOK_CACHE_TTL_MS) {
+            await fs.promises.unlink(fullPath).catch(() => {});
+          }
+        })
+    );
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      logError("Book cache cleanup failed", { error: error?.message || String(error) });
+    }
+  }
+}
+
+function startBookCacheSweeper() {
+  if (bookCacheSweepTimer) return;
+  cleanupBookCache();
+  bookCacheSweepTimer = setInterval(() => {
+    cleanupBookCache();
+  }, BOOK_CACHE_SWEEP_INTERVAL_MS);
+
+  if (typeof bookCacheSweepTimer.unref === "function") {
+    bookCacheSweepTimer.unref();
+  }
+}
+
+async function ensureBookCachedFile({ driveFileId }) {
+  await cleanupBookCache();
+  await fs.promises.mkdir(BOOK_CACHE_DIR, { recursive: true });
+
+  const cachePath = path.join(BOOK_CACHE_DIR, `${driveFileId}.pdf`);
+  const existingStat = await fs.promises.stat(cachePath).catch(() => null);
+
+  if (existingStat && Date.now() - existingStat.mtimeMs <= BOOK_CACHE_TTL_MS) {
+    return cachePath;
+  }
+
+  const lockKey = String(driveFileId);
+  if (bookDownloadLocks.has(lockKey)) {
+    return bookDownloadLocks.get(lockKey);
+  }
+
+  const downloadPromise = (async () => {
+    if (existingStat) {
+      await fs.promises.unlink(cachePath).catch(() => {});
+    }
+    await downloadDriveFileToPath({
+      fileId: driveFileId,
+      targetPath: cachePath
+    });
+    return cachePath;
+  })()
+    .finally(() => {
+      bookDownloadLocks.delete(lockKey);
+    });
+
+  bookDownloadLocks.set(lockKey, downloadPromise);
+  return downloadPromise;
+}
+
+async function sendUniversityBookById(ctx, contentId) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+  if (!major) {
+    await ctx.reply("برای دریافت فایل کتاب، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const item = await getUniversityBookById({ contentId, major, term });
+  if (!item) {
+    await ctx.reply("این کتاب برای پروفایل شما پیدا نشد یا منتشر نیست.", universityMenu());
+    return;
+  }
+
+  const driveFileId = resolveItemDriveFileId(item);
+  if (!driveFileId) {
+    await ctx.reply("فایل این کتاب هنوز ثبت نشده. لطفا به ادمین اطلاع بده.", universityMenu());
+    return;
+  }
+
+  try {
+    const localPath = await ensureBookCachedFile({ driveFileId });
+    const fileName = sanitizeBookFileName(item.title);
+    await ctx.replyWithDocument(
+      {
+        source: localPath,
+        filename: fileName
+      },
+      {
+        caption: `📚 ${item.title}`
+      }
+    );
+  } catch (error) {
+    logError("Book send failed", {
+      error: error?.message || String(error),
+      contentId,
+      driveFileId
+    });
+    await ctx.reply("ارسال فایل کتاب انجام نشد. دوباره تلاش کن.", universityMenu());
+  }
+}
+
+async function showUniversityBooksPanel(ctx) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("برای دریافت محتوای دقیق دانشگاه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const books = await getUniversityBooksForPanel({ major, term, limit: BOOK_PANEL_LIMIT });
+  const readyBooks = books.filter((item) => Boolean(resolveItemDriveFileId(item)));
+
+  if (!readyBooks.length) {
+    await ctx.reply(
+      `کتاب های دانشگاه\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\nکتاب قابل دانلودی ثبت نشده.`,
+      universityMenu()
+    );
+    return;
+  }
+
+  const listText = readyBooks.map((item, index) => `${index + 1}. ${item.title}`).join("\n");
+  const message =
+    `کتاب های دانشگاه\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\n` +
+    `${listText}\n\n` +
+    "روی اسم کتاب بزن تا فایل مستقیم داخل تلگرام ارسال شود.";
+
+  await ctx.reply(message, buildBookPanelKeyboard(readyBooks));
 }
 
 async function showUniversityKind(ctx, kind, title) {
@@ -3083,6 +3327,36 @@ async function handleProfileWizardInput(ctx) {
 }
 
 function registerHandlers(bot) {
+  bot.action("booklist:refresh", async (ctx) => {
+    try {
+      await ctx.answerCbQuery("لیست به روز شد.");
+    } catch (_error) {
+      // ignore answer callback errors
+    }
+    await showUniversityBooksPanel(ctx);
+  });
+
+  bot.action(/^bookdl:(\d+)$/, async (ctx) => {
+    const contentId = Number(ctx.match?.[1]);
+
+    if (!contentId) {
+      try {
+        await ctx.answerCbQuery("شناسه کتاب نامعتبر است.");
+      } catch (_error) {
+        // ignore
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery("در حال آماده سازی فایل...");
+    } catch (_error) {
+      // ignore
+    }
+
+    await sendUniversityBookById(ctx, contentId);
+  });
+
   bot.on("document", async (ctx, next) => {
     const handledMedia = await handleSubmissionWizardMediaInput(ctx);
     if (handledMedia) return;
@@ -3153,7 +3427,7 @@ function registerHandlers(bot) {
   });
 
   bot.hears("کتاب های دانشگاه", async (ctx) => {
-    await showUniversityKind(ctx, "book", "کتاب های دانشگاه");
+    await showUniversityBooksPanel(ctx);
   });
 
   bot.hears("منابع دانشگاه", async (ctx) => {
@@ -3367,6 +3641,7 @@ async function attachBot(app) {
 
   const bot = new Telegraf(config.telegramBotToken);
   registerHandlers(bot);
+  startBookCacheSweeper();
 
   const shouldUseWebhook = config.telegramUseWebhook || Boolean(config.telegramWebhookDomain);
 

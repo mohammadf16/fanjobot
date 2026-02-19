@@ -1,5 +1,7 @@
 const fs = require("fs");
+const path = require("path");
 const { Readable } = require("stream");
+const { pipeline } = require("stream/promises");
 const { google } = require("googleapis");
 const { config } = require("../config");
 
@@ -372,7 +374,61 @@ async function testDriveReadWrite({ folderId }) {
   };
 }
 
+async function downloadDriveFileToPath({ fileId, targetPath }) {
+  const drive = await getDriveClient();
+  const normalizedFileId = String(fileId || "").trim();
+  const normalizedTargetPath = String(targetPath || "").trim();
+
+  if (!normalizedFileId) {
+    throw new Error("downloadDriveFileToPath requires fileId");
+  }
+  if (!normalizedTargetPath) {
+    throw new Error("downloadDriveFileToPath requires targetPath");
+  }
+
+  await fs.promises.mkdir(path.dirname(normalizedTargetPath), { recursive: true });
+
+  const metadataRes = await drive.files.get({
+    fileId: normalizedFileId,
+    fields: "id,name,mimeType",
+    supportsAllDrives: true
+  });
+
+  const downloadRes = await drive.files.get(
+    {
+      fileId: normalizedFileId,
+      alt: "media",
+      supportsAllDrives: true
+    },
+    {
+      responseType: "stream"
+    }
+  );
+
+  const tempPath = `${normalizedTargetPath}.part-${Date.now()}`;
+
+  try {
+    await pipeline(downloadRes.data, fs.createWriteStream(tempPath));
+    await fs.promises.rename(tempPath, normalizedTargetPath);
+  } catch (error) {
+    try {
+      await fs.promises.unlink(tempPath);
+    } catch (_cleanupError) {
+      // ignore
+    }
+    throw error;
+  }
+
+  return {
+    fileId: metadataRes?.data?.id || normalizedFileId,
+    fileName: metadataRes?.data?.name || null,
+    mimeType: metadataRes?.data?.mimeType || null,
+    localPath: normalizedTargetPath
+  };
+}
+
 module.exports = {
   uploadBufferToDrive,
-  testDriveReadWrite
+  testDriveReadWrite,
+  downloadDriveFileToPath
 };
