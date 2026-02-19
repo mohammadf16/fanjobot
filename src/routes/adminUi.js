@@ -407,6 +407,64 @@ router.get("/admin", (req, res) => {
         <div class="list block" id="submissionsList"></div>
       </div>
     </section>
+
+    <section class="panel hidden">
+      <div class="row">
+        <h2 class="section-title tight">Industry Control Center</h2>
+        <button id="refreshIndustryCenterBtn" class="ghost tight">Refresh</button>
+      </div>
+      <div class="split">
+        <div>
+          <h3 class="section-title">Opportunities</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Title</th>
+                  <th>Approval</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="opportunityCenterBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <h3 class="section-title">Projects</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="projectCenterBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="block">
+        <h3 class="section-title">Notifications</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="notificationCenterBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script>
@@ -817,6 +875,74 @@ router.get("/admin", (req, res) => {
       });
     }
 
+    async function setProjectStatus(projectId, status) {
+      await api("/api/admin/industry/projects/" + projectId + "/status", {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
+    }
+
+    async function setNotificationStatus(notificationId, status) {
+      await api("/api/admin/notifications/" + notificationId, {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
+    }
+
+    async function loadIndustryCenter() {
+      const [opportunities, projects, notifications] = await Promise.all([
+        api("/api/admin/industry/opportunities?limit=30"),
+        api("/api/admin/industry/projects?limit=30"),
+        api("/api/admin/notifications?limit=30")
+      ]);
+
+      el("opportunityCenterBody").innerHTML = (opportunities.items || []).map((item) => \`
+        <tr>
+          <td>\${item.id}</td>
+          <td>\${esc(item.title || "-")}</td>
+          <td>
+            <select class="opp-approval-center" data-id="\${item.id}">
+              <option value="pending" \${item.approval_status === "pending" ? "selected" : ""}>pending</option>
+              <option value="approved" \${item.approval_status === "approved" ? "selected" : ""}>approved</option>
+              <option value="rejected" \${item.approval_status === "rejected" ? "selected" : ""}>rejected</option>
+            </select>
+          </td>
+          <td>
+            <select class="opp-status-center" data-id="\${item.id}">
+              <option value="open" \${item.status === "open" ? "selected" : ""}>open</option>
+              <option value="closed" \${item.status === "closed" ? "selected" : ""}>closed</option>
+            </select>
+          </td>
+          <td><button class="tight save-opp-center" data-id="\${item.id}">Save</button></td>
+        </tr>
+      \`).join("") || "<tr><td colspan='5'>No opportunities</td></tr>";
+
+      el("projectCenterBody").innerHTML = (projects.items || []).map((item) => \`
+        <tr>
+          <td>\${item.id}</td>
+          <td>\${esc(item.title || "-")}</td>
+          <td>
+            <select class="project-status-center" data-id="\${item.id}">
+              <option value="open" \${item.status === "open" ? "selected" : ""}>open</option>
+              <option value="closed" \${item.status === "closed" ? "selected" : ""}>closed</option>
+            </select>
+          </td>
+          <td><button class="tight save-project-center" data-id="\${item.id}">Save</button></td>
+        </tr>
+      \`).join("") || "<tr><td colspan='4'>No projects</td></tr>";
+
+      el("notificationCenterBody").innerHTML = (notifications.items || []).map((item) => \`
+        <tr>
+          <td>\${item.id}</td>
+          <td>\${esc(item.title || item.type || "-")}</td>
+          <td>\${esc(item.status || "-")}</td>
+          <td>
+            <button class="tight resolve-notif" data-id="\${item.id}" \${item.status === "resolved" ? "disabled" : ""}>Resolve</button>
+          </td>
+        </tr>
+      \`).join("") || "<tr><td colspan='4'>No notifications</td></tr>";
+    }
+
     async function loadAll() {
       await Promise.all([
         loadOverview(),
@@ -825,7 +951,8 @@ router.get("/admin", (req, res) => {
         loadSubmissions(),
         loadQuickBoards(),
         loadModerationBoard(),
-        loadOpsBoard()
+        loadOpsBoard(),
+        loadIndustryCenter()
       ]);
     }
 
@@ -855,6 +982,7 @@ router.get("/admin", (req, res) => {
     el("refreshQuickBoardsBtn").addEventListener("click", () => loadQuickBoards().then(() => showStatus("کارهای فوری بازخوانی شد.")).catch((e) => showStatus(e.message, true)));
     el("refreshModerationBoardBtn").addEventListener("click", () => loadModerationBoard().then(() => showStatus("صف مودریشن بازخوانی شد.")).catch((e) => showStatus(e.message, true)));
     el("refreshOpsBoardBtn").addEventListener("click", () => loadOpsBoard().then(() => showStatus("اپریشن برد بازخوانی شد.")).catch((e) => showStatus(e.message, true)));
+    el("refreshIndustryCenterBtn").addEventListener("click", () => loadIndustryCenter().then(() => showStatus("Industry center refreshed.")).catch((e) => showStatus(e.message, true)));
     el("loadUsersBtn").addEventListener("click", () => loadUsers().catch((e) => showStatus(e.message, true)));
     el("createUserBtn").addEventListener("click", () => createUser().catch((e) => showStatus(e.message, true)));
     el("updateUserBtn").addEventListener("click", () => updateUser().catch((e) => showStatus(e.message, true)));
@@ -922,6 +1050,59 @@ router.get("/admin", (req, res) => {
 
         await Promise.all([loadOverview(), loadOpsBoard(), loadQuickBoards()]);
         showStatus("عملیات انجام شد.");
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    });
+
+    el("opportunityCenterBody").addEventListener("click", async (event) => {
+      const btn = event.target.closest(".save-opp-center");
+      if (!btn) return;
+      const opportunityId = Number(btn.dataset.id);
+      if (!opportunityId) return;
+
+      const approvalEl = el("opportunityCenterBody").querySelector('.opp-approval-center[data-id=\"' + opportunityId + '\"]');
+      const statusEl = el("opportunityCenterBody").querySelector('.opp-status-center[data-id=\"' + opportunityId + '\"]');
+
+      try {
+        await setOpportunityApproval(opportunityId, approvalEl?.value || "pending");
+        await api("/api/admin/industry/opportunities/" + opportunityId + "/status", {
+          method: "PATCH",
+          body: JSON.stringify({ status: statusEl?.value || "open" })
+        });
+        await Promise.all([loadOverview(), loadIndustryCenter(), loadOpsBoard()]);
+        showStatus("Opportunity updated.");
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    });
+
+    el("projectCenterBody").addEventListener("click", async (event) => {
+      const btn = event.target.closest(".save-project-center");
+      if (!btn) return;
+      const projectId = Number(btn.dataset.id);
+      if (!projectId) return;
+      const statusEl = el("projectCenterBody").querySelector('.project-status-center[data-id=\"' + projectId + '\"]');
+
+      try {
+        await setProjectStatus(projectId, statusEl?.value || "open");
+        await Promise.all([loadOverview(), loadIndustryCenter()]);
+        showStatus("Project updated.");
+      } catch (error) {
+        showStatus(error.message, true);
+      }
+    });
+
+    el("notificationCenterBody").addEventListener("click", async (event) => {
+      const btn = event.target.closest(".resolve-notif");
+      if (!btn) return;
+      const notificationId = Number(btn.dataset.id);
+      if (!notificationId) return;
+
+      try {
+        await setNotificationStatus(notificationId, "resolved");
+        await Promise.all([loadOverview(), loadIndustryCenter(), loadNotifications(), loadQuickBoards()]);
+        showStatus("Notification resolved.");
       } catch (error) {
         showStatus(error.message, true);
       }
