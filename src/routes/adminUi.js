@@ -4,7 +4,7 @@ const { config } = require("../config");
 
 const router = express.Router();
 const assetsDir = path.join(__dirname, "..", "admin-ui", "assets");
-const assetVersion = "20260219-8";
+const assetVersion = "20260219-9";
 
 function escapeAttr(value) {
   return String(value || "")
@@ -1037,4 +1037,3 @@ router.get("/admin/logs", (_req, res) => {
 });
 
 module.exports = router;
-
