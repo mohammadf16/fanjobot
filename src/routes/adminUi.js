@@ -4,7 +4,7 @@ const { config } = require("../config");
 
 const router = express.Router();
 const assetsDir = path.join(__dirname, "..", "admin-ui", "assets");
-const assetVersion = "20260219-6";
+const assetVersion = "20260219-8";
 
 function escapeAttr(value) {
   return String(value || "")
@@ -131,204 +131,177 @@ function renderMiniAppPage() {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#0f766e" />
   <title>Fanjobo Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    :root {
-      --bg: #0b1220;
-      --card: #111a2e;
-      --line: #27324b;
-      --text: #e5ecff;
-      --muted: #9fb0d8;
-      --ok: #22c55e;
-      --warn: #f59e0b;
-      --btn: #2563eb;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      color: var(--text);
-      background: radial-gradient(1200px 700px at 15% 0%, #1e2b49 0%, var(--bg) 55%);
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 20px;
-    }
-    .wrap {
-      width: min(760px, 100%);
-      display: grid;
-      gap: 14px;
-    }
-    .card {
-      background: rgba(17, 26, 46, 0.85);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 16px;
-      backdrop-filter: blur(8px);
-    }
-    h1 {
-      margin: 0 0 6px;
-      font-size: 22px;
-      letter-spacing: 0.2px;
-    }
-    p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.6;
-    }
-    .row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 10px;
-    }
-    .pill {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 6px 10px;
-      color: var(--muted);
-      font-size: 12px;
-      background: #0f172a;
-    }
-    .pill.ok { color: var(--ok); border-color: rgba(34, 197, 94, 0.35); }
-    .pill.warn { color: var(--warn); border-color: rgba(245, 158, 11, 0.35); }
-    .kv {
-      display: grid;
-      grid-template-columns: 130px 1fr;
-      gap: 8px;
-      margin-top: 12px;
-      font-size: 14px;
-    }
-    .k { color: var(--muted); }
-    .v {
-      color: var(--text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 12px;
-    }
-    button {
-      background: var(--btn);
-      color: #fff;
-      border: 0;
-      border-radius: 10px;
-      padding: 10px 14px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    button.ghost {
-      background: transparent;
-      border: 1px solid var(--line);
-      color: var(--text);
-    }
-    pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: #0f172a;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px;
-      color: #cbd8ff;
-      min-height: 72px;
-      font-size: 12px;
-    }
-  </style>
+  <link rel="stylesheet" href="/admin/assets/miniapp.css?v=${assetVersion}" />
 </head>
 <body>
-  <div class="wrap">
-    <section class="card">
-      <h1>Fanjobo Telegram Mini App</h1>
-      <p>The route is active now. You can use this URL in BotFather for Web App / Mini App.</p>
-      <div class="row">
-        <span id="tgState" class="pill warn">Telegram context: unknown</span>
-        <span id="apiState" class="pill">API health: checking...</span>
+  <div class="mini-shell">
+    <header class="mini-top glass">
+      <div>
+        <h1>Fanjobo Mini App</h1>
+        <p id="miniUserLabel">Connecting to your account...</p>
       </div>
-    </section>
-
-    <section class="card">
-      <div class="kv"><div class="k">telegram_user_id</div><div id="uId" class="v">-</div></div>
-      <div class="kv"><div class="k">username</div><div id="uName" class="v">-</div></div>
-      <div class="kv"><div class="k">first_name</div><div id="uFirst" class="v">-</div></div>
-      <div class="kv"><div class="k">platform</div><div id="platform" class="v">-</div></div>
-      <div class="kv"><div class="k">theme</div><div id="theme" class="v">-</div></div>
-      <div class="actions">
-        <button id="expandBtn" type="button">Expand</button>
-        <button id="closeBtn" class="ghost" type="button">Close Mini App</button>
+      <div class="mini-actions">
+        <button id="miniRefreshAllBtn" class="btn">Refresh</button>
       </div>
-    </section>
+    </header>
 
-    <section class="card">
-      <pre id="logBox">Mini app booting...</pre>
-    </section>
+    <nav id="miniNav" class="mini-nav glass"></nav>
+
+    <main>
+      <section id="tab-dashboard" class="mini-tab glass active">
+        <h2>Dashboard</h2>
+        <div id="dashCards" class="cards-grid"></div>
+        <div class="mini-grid-2">
+          <article class="glass">
+            <h3>Recent Events</h3>
+            <div id="dashEvents" class="list"></div>
+          </article>
+          <article class="glass">
+            <h3>Profile Snapshot</h3>
+            <div id="dashProfile" class="kv"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="tab-profile" class="mini-tab glass">
+        <h2>Profile</h2>
+        <form id="profileForm" class="form-grid"></form>
+      </section>
+
+      <section id="tab-university" class="mini-tab glass">
+        <h2>University</h2>
+        <div class="toolbar">
+          <select id="uniKindFilter"></select>
+          <input id="uniSearchInput" placeholder="Search by title or description" />
+          <button id="uniLoadBtn" class="btn">Load</button>
+        </div>
+        <div id="uniList" class="list"></div>
+        <div class="pager">
+          <button id="uniPrevBtn" class="btn ghost">Prev</button>
+          <span id="uniPageLabel">Page 1</span>
+          <button id="uniNextBtn" class="btn ghost">Next</button>
+        </div>
+      </section>
+
+      <section id="tab-industry" class="mini-tab glass">
+        <h2>Industry</h2>
+        <div class="mini-grid-2">
+          <article>
+            <h3>Opportunities</h3>
+            <div class="toolbar">
+              <select id="indTypeFilter">
+                <option value="">All types</option>
+                <option value="internship">Internship</option>
+                <option value="job">Job</option>
+                <option value="project-based">Project based</option>
+                <option value="part-time">Part time</option>
+              </select>
+              <button id="indLoadOppBtn" class="btn">Load Opportunities</button>
+            </div>
+            <div id="indOppList" class="list"></div>
+          </article>
+          <article>
+            <h3>Projects & Workspace</h3>
+            <div class="toolbar">
+              <button id="indLoadProjectsBtn" class="btn">Open Projects</button>
+              <button id="indLoadWorkspaceBtn" class="btn ghost">My Workspace</button>
+            </div>
+            <div id="indProjectList" class="list"></div>
+          </article>
+        </div>
+        <article>
+          <h3>My Applications</h3>
+          <div id="indApplications" class="list"></div>
+        </article>
+      </section>
+
+      <section id="tab-path" class="mini-tab glass">
+        <h2>My Path</h2>
+        <div id="pathSummary" class="cards-grid"></div>
+        <div class="mini-grid-2">
+          <article>
+            <h3>Goals</h3>
+            <form id="pathGoalForm" class="toolbar wrap"></form>
+            <div id="pathGoals" class="list"></div>
+          </article>
+          <article>
+            <h3>Tasks</h3>
+            <form id="pathTaskForm" class="toolbar wrap"></form>
+            <div id="pathTasks" class="list"></div>
+          </article>
+        </div>
+        <article>
+          <h3>Artifacts</h3>
+          <form id="pathArtifactForm" class="toolbar wrap"></form>
+          <div id="pathArtifacts" class="list"></div>
+        </article>
+      </section>
+
+      <section id="tab-support" class="mini-tab glass">
+        <h2>Support</h2>
+        <form id="supportCreateForm" class="form-grid"></form>
+        <div class="toolbar">
+          <button id="supportLoadBtn" class="btn">Load My Tickets</button>
+        </div>
+        <div id="supportList" class="list"></div>
+      </section>
+
+      <section id="tab-submissions" class="mini-tab glass">
+        <h2>Submissions</h2>
+        <form id="submissionForm" class="form-grid" enctype="multipart/form-data"></form>
+        <div class="toolbar">
+          <button id="submissionLoadBtn" class="btn ghost">Load My Submissions</button>
+        </div>
+        <div id="submissionList" class="list"></div>
+      </section>
+
+      <section id="tab-admin" class="mini-tab glass">
+        <h2>Admin</h2>
+        <div id="adminOverviewCards" class="cards-grid"></div>
+        <div class="mini-grid-2">
+          <article>
+            <h3>Support Queue</h3>
+            <div class="toolbar">
+              <button id="adminLoadSupportBtn" class="btn">Load Tickets</button>
+            </div>
+            <div id="adminSupportList" class="list"></div>
+          </article>
+          <article>
+            <h3>Moderation Queue</h3>
+            <div class="toolbar">
+              <button id="adminLoadSubmissionsBtn" class="btn">Load Submissions</button>
+            </div>
+            <div id="adminSubmissionList" class="list"></div>
+          </article>
+        </div>
+        <article>
+          <h3>Broadcast</h3>
+          <div class="toolbar wrap">
+            <input id="adminBroadcastLimit" type="number" min="1" max="10000" placeholder="Limit (optional)" />
+            <label class="pill"><input id="adminBroadcastDryRun" type="checkbox" /> Dry run</label>
+          </div>
+          <textarea id="adminBroadcastMessage" placeholder="Write broadcast message..."></textarea>
+          <div class="toolbar">
+            <button id="adminBroadcastBtn" class="btn">Send Broadcast</button>
+            <button id="adminLoadOverviewBtn" class="btn ghost">Refresh Admin Data</button>
+          </div>
+        </article>
+        <div class="toolbar">
+          <a href="/admin/dashboard" target="_blank" class="btn ghost">Open Full Admin Panel</a>
+        </div>
+        <p class="muted">This tab is active only for configured admin accounts.</p>
+      </section>
+    </main>
   </div>
 
-  <script>
-    (function () {
-      var el = function (id) { return document.getElementById(id); };
-      var logBox = el("logBox");
-
-      function log(text) {
-        logBox.textContent = String(text || "");
-      }
-
-      function setApiState(ok) {
-        var node = el("apiState");
-        if (ok) {
-          node.className = "pill ok";
-          node.textContent = "API health: OK";
-        } else {
-          node.className = "pill warn";
-          node.textContent = "API health: failed";
-        }
-      }
-
-      fetch("/health", { method: "GET" })
-        .then(function (res) { return setApiState(res.ok); })
-        .catch(function () { return setApiState(false); });
-
-      var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-      if (!tg) {
-        el("tgState").className = "pill warn";
-        el("tgState").textContent = "Telegram context: browser mode";
-        log("Loaded outside Telegram. Open from Telegram Web App button.");
-        return;
-      }
-
-      tg.ready();
-      tg.expand();
-
-      el("tgState").className = "pill ok";
-      el("tgState").textContent = "Telegram context: active";
-
-      var user = (tg.initDataUnsafe && tg.initDataUnsafe.user) || {};
-      el("uId").textContent = user.id || "-";
-      el("uName").textContent = user.username ? "@" + user.username : "-";
-      el("uFirst").textContent = user.first_name || "-";
-      el("platform").textContent = tg.platform || "-";
-      el("theme").textContent = tg.colorScheme || "-";
-
-      el("expandBtn").addEventListener("click", function () {
-        try { tg.expand(); } catch (_e) {}
-      });
-      el("closeBtn").addEventListener("click", function () {
-        try { tg.close(); } catch (_e) {}
-      });
-
-      log("Mini app is ready.");
-    })();
-  </script>
+  <div id="miniToastHost" class="toast-host" aria-live="polite"></div>
+  <script defer src="/admin/assets/miniapp.js?v=${assetVersion}"></script>
 </body>
 </html>`;
 }
-
 const dashboardContent = `
 <section class="card dashboard-hero">
   <div class="section-head">
@@ -601,7 +574,7 @@ const messagingContent = `
     <div class="toolbar">
       <input id="msgLimitInput" type="number" min="1" max="10000" value="500" placeholder="send limit (optional)" />
       <label class="check-row">
-        <input id="msgDryRunInput" type="checkbox" checked />
+        <input id="msgDryRunInput" type="checkbox" />
         Dry run only (no messages sent)
       </label>
     </div>
@@ -1031,3 +1004,5 @@ router.get("/admin/logs", (_req, res) => {
 });
 
 module.exports = router;
+
+

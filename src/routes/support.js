@@ -54,6 +54,33 @@ async function notifyAdminNewTicket(ticket, userId, messageText) {
   }
 }
 
+async function notifyAdminUserReply(ticket, userId, messageText) {
+  const chatId = adminChatId();
+  if (!chatId || !isBotAvailable()) return { delivered: false, reason: "admin-chat-or-bot-missing" };
+
+  const lines = [
+    "💬 پاسخ جدید کاربر در تیکت",
+    `شماره: #${ticket.id}`,
+    `کاربر: #${userId}`,
+    `موضوع: ${ticket.subject || "-"}`,
+    "",
+    "برای مشاهده در بات:",
+    `/ticket ${ticket.id}`,
+    "برای پاسخ در بات:",
+    `/replyticket ${ticket.id} <متن پاسخ>`
+  ];
+  if (messageText) {
+    lines.push("", `متن پیام: ${String(messageText).slice(0, 500)}`);
+  }
+
+  try {
+    await sendTelegramMessage(chatId, lines.join("\n"));
+    return { delivered: true };
+  } catch (error) {
+    return { delivered: false, reason: error?.message || String(error) };
+  }
+}
+
 router.use(async (_req, _res, next) => {
   try {
     await ensureSupportTables();
@@ -205,7 +232,8 @@ router.post("/my/:userId/tickets/:ticketId/reply", async (req, res, next) => {
       [ticketId, userId]
     );
     if (!ticketRes.rows.length) return res.status(404).json({ error: "Ticket not found" });
-    if (ticketRes.rows[0].status === "closed") {
+    const ticket = ticketRes.rows[0];
+    if (ticket.status === "closed") {
       return res.status(400).json({ error: "Ticket is closed" });
     }
 
@@ -238,9 +266,16 @@ router.post("/my/:userId/tickets/:ticketId/reply", async (req, res, next) => {
       ]
     );
 
+    const adminNotify = await notifyAdminUserReply(
+      { id: ticketId, subject: ticket.subject },
+      userId,
+      message
+    );
+
     return res.json({
       ticket: updatedTicket.rows[0],
-      message: insertedMessage.rows[0]
+      message: insertedMessage.rows[0],
+      adminNotify
     });
   } catch (error) {
     next(error);

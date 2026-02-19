@@ -37,6 +37,12 @@
       });
   }
 
+  function userProfileLink(userId) {
+    var id = Number(userId);
+    if (!id) return "-";
+    return "<a class='entity-link' href='/admin/users/" + id + "'>#" + id + "</a>";
+  }
+
   function renderRows(items) {
     rowsCache = (items || []).slice();
     var filtered = filterRows(rowsCache);
@@ -57,8 +63,8 @@
             AdminCore.esc(item.content_kind || "-") +
             "</td><td>" +
             AdminCore.esc(item.title || "-") +
-            "</td><td>#" +
-            AdminCore.esc(item.user_id || "-") +
+            "</td><td>" +
+            userProfileLink(item.user_id) +
             "</td><td>" +
             AdminCore.esc(item.created_at || "") +
             "</td><td><div class='toolbar'><button class='btn ghost sub-detail' data-id='" +
