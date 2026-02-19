@@ -1,9 +1,12 @@
 const express = require("express");
+const fs = require("fs");
 const multer = require("multer");
+const os = require("os");
+const path = require("path");
 const { query } = require("../db");
 const { config } = require("../config");
-const { isBotAvailable, sendTelegramMessage } = require("../bot");
-const { uploadBufferToDrive } = require("../services/googleDrive");
+const { isBotAvailable, sendTelegramDocument, sendTelegramMessage } = require("../bot");
+const { downloadDriveFileToPath, uploadBufferToDrive } = require("../services/googleDrive");
 const { ensureSupportTables } = require("../services/supportTickets");
 
 const router = express.Router();
@@ -40,7 +43,7 @@ function parseList(value) {
     return value.map((item) => String(item || "").trim()).filter(Boolean);
   }
   return String(value || "")
-    .split(/[,،]/)
+    .split(/[,\u060C]/)
     .map((item) => item.trim())
     .filter(Boolean);
 }
@@ -72,10 +75,10 @@ function wait(ms) {
 
 function formatSupportStatusFa(status) {
   const map = {
-    open: "باز",
-    pending: "در انتظار",
-    answered: "پاسخ داده شده",
-    closed: "بسته"
+    open: "???",
+    pending: "?? ??????",
+    answered: "???? ???? ???",
+    closed: "????"
   };
   return map[String(status || "").toLowerCase()] || String(status || "-");
 }
@@ -242,6 +245,66 @@ async function getUserWithProfile(userId) {
   return result.rows[0] || null;
 }
 
+function groupUniversityItems(items) {
+  const grouped = {
+    courses: [],
+    professors: [],
+    notes: [],
+    books: [],
+    videos: [],
+    sampleQuestions: [],
+    summaries: [],
+    resources: [],
+    examTips: []
+  };
+
+  for (const item of items) {
+    if (item.kind === "course") grouped.courses.push(item);
+    else if (item.kind === "professor") grouped.professors.push(item);
+    else if (item.kind === "note") grouped.notes.push(item);
+    else if (item.kind === "book") grouped.books.push(item);
+    else if (item.kind === "video") grouped.videos.push(item);
+    else if (item.kind === "sample-question") grouped.sampleQuestions.push(item);
+    else if (item.kind === "summary") grouped.summaries.push(item);
+    else if (item.kind === "resource") grouped.resources.push(item);
+    else if (item.kind === "exam-tip") grouped.examTips.push(item);
+  }
+
+  return grouped;
+}
+
+function toSafeUniversityItem(row) {
+  return {
+    id: Number(row.id),
+    title: row.title || null,
+    description: row.description || null,
+    kind: row.kind || null,
+    major: row.major || null,
+    term: row.term || null,
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    created_at: row.created_at || null,
+    has_file: Boolean(row.drive_file_id)
+  };
+}
+
+function extractLabelValue(description, label) {
+  const text = String(description || "");
+  const regex = new RegExp(`${label}\\s*:\\s*([^\\n]+)`, "i");
+  const match = text.match(regex);
+  return match?.[1] ? String(match[1]).trim() : null;
+}
+
+async function resolveUserById(userId) {
+  const result = await query(
+    `SELECT id, full_name, telegram_id
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  return result.rows[0] || null;
+}
+
 router.use(async (_req, _res, next) => {
   try {
     await ensureSupportTables();
@@ -331,6 +394,178 @@ router.get("/notifications/:userId", async (req, res, next) => {
     res.json({ items: result.rows });
   } catch (error) {
     next(error);
+  }
+});
+
+router.get("/university/my/:userId", async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: "Invalid userId" });
+
+    const profileRes = await query(
+      `SELECT major, term
+       FROM user_profiles
+       WHERE user_id = $1
+       LIMIT 1`,
+      [userId]
+    );
+    const major = profileRes.rows[0]?.major || null;
+    const term = profileRes.rows[0]?.term || null;
+
+    const rows = await query(
+      `SELECT c.id, c.title, c.description, c.kind, c.major, c.term, c.tags, c.created_at,
+              (
+                SELECT f.drive_file_id
+                FROM content_files f
+                WHERE f.content_id = c.id
+                ORDER BY f.created_at DESC, f.id DESC
+                LIMIT 1
+              ) AS drive_file_id
+       FROM contents c
+       WHERE c.type = 'university'
+         AND c.is_published = TRUE
+         AND ($1::text IS NULL OR c.major = $1 OR c.major IS NULL)
+         AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
+       ORDER BY c.created_at DESC
+       LIMIT $3`,
+      [major, term, toLimit(req.query.limit, 80, 200)]
+    );
+
+    const safeItems = rows.rows.map(toSafeUniversityItem);
+    const modules = groupUniversityItems(safeItems);
+
+    res.json({
+      userId,
+      major,
+      term,
+      summary: {
+        courses: modules.courses.length,
+        professors: modules.professors.length,
+        notes: modules.notes.length,
+        books: modules.books.length,
+        resources: modules.resources.length,
+        videos: modules.videos.length,
+        sampleQuestions: modules.sampleQuestions.length,
+        summaries: modules.summaries.length,
+        examTips: modules.examTips.length
+      },
+      modules,
+      download_via_telegram_only: true
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/university/request-download", async (req, res, next) => {
+  let tempFilePath = null;
+  try {
+    const userId = Number(req.body?.userId);
+    const contentId = Number(req.body?.contentId);
+    if (!userId || !contentId) {
+      return res.status(400).json({ error: "userId and contentId are required" });
+    }
+
+    const user = await resolveUserById(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    const telegramId = toNullableString(user.telegram_id);
+    if (!telegramId) {
+      return res.status(400).json({ error: "Telegram account is not linked for this user" });
+    }
+    if (!isBotAvailable()) {
+      return res.status(503).json({ error: "Telegram bot is offline. Try again later." });
+    }
+
+    const contentRes = await query(
+      `SELECT c.id, c.title, c.description, c.kind, c.major, c.term,
+              (
+                SELECT f.drive_file_id
+                FROM content_files f
+                WHERE f.content_id = c.id
+                ORDER BY f.created_at DESC, f.id DESC
+                LIMIT 1
+              ) AS drive_file_id
+       FROM contents c
+       WHERE c.id = $1
+         AND c.type = 'university'
+         AND c.is_published = TRUE
+       LIMIT 1`,
+      [contentId]
+    );
+    if (!contentRes.rows.length) return res.status(404).json({ error: "Content not found" });
+    const content = contentRes.rows[0];
+
+    const driveFileId = toNullableString(content.drive_file_id);
+    if (!driveFileId) {
+      return res.status(404).json({ error: "This content does not have a downloadable file" });
+    }
+
+    const targetPath = path.join(
+      os.tmpdir(),
+      "fanjobo-miniapp-downloads",
+      `u${userId}-c${contentId}-${Date.now()}`
+    );
+    const downloaded = await downloadDriveFileToPath({ fileId: driveFileId, targetPath });
+    tempFilePath = downloaded.localPath;
+
+    const courseName = extractLabelValue(content.description, "درس مرتبط");
+    const professorName = extractLabelValue(content.description, "استاد مرتبط");
+    const purpose = extractLabelValue(content.description, "هدف");
+    const captionLines = [
+      "درخواست دانلود شما آماده شد ✅",
+      `عنوان: ${content.title || "-"}`,
+      `نوع محتوا: ${content.kind || "-"}`,
+      `رشته: ${content.major || "-"}`,
+      `ترم: ${content.term || "-"}`,
+      courseName ? `درس: ${courseName}` : null,
+      professorName ? `استاد: ${professorName}` : null,
+      purpose ? `هدف: ${purpose}` : null
+    ].filter(Boolean);
+
+    const caption = captionLines.join("\n").slice(0, 1000);
+    const fileName = downloaded.fileName || `content-${contentId}.pdf`;
+    await sendTelegramDocument(
+      telegramId,
+      {
+        source: fs.createReadStream(downloaded.localPath),
+        filename: fileName
+      },
+      { caption }
+    );
+
+    await createUserEvent({
+      userId,
+      eventType: "miniapp_university_download_sent",
+      payload: { contentId, driveFileId, fileName }
+    });
+
+    await query(
+      `INSERT INTO admin_notifications
+       (type, title, message, payload, status)
+       VALUES ('miniapp-university-download', $1, $2, $3::jsonb, 'open')`,
+      [
+        "University file sent via Telegram",
+        `${content.title || "content"} was delivered to user #${userId}`,
+        JSON.stringify({ userId, contentId, driveFileId })
+      ]
+    );
+
+    res.json({
+      ok: true,
+      delivered: true,
+      via: "telegram",
+      content: {
+        id: Number(content.id),
+        title: content.title || null,
+        kind: content.kind || null
+      }
+    });
+  } catch (error) {
+    next(error);
+  } finally {
+    if (tempFilePath) {
+      fs.promises.unlink(tempFilePath).catch(() => {});
+    }
   }
 });
 

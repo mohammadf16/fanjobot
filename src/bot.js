@@ -5688,8 +5688,24 @@ async function sendTelegramMessage(chatId, text, extra = {}) {
   return activeBotInstance.telegram.sendMessage(normalizedChatId, normalizedText, extra);
 }
 
+async function sendTelegramDocument(chatId, document, extra = {}) {
+  if (!activeBotInstance) {
+    throw new Error("Telegram bot is not running");
+  }
+  const normalizedChatId = String(chatId || "").trim();
+  if (!normalizedChatId) {
+    throw new Error("Telegram chat id is required");
+  }
+  if (!document) {
+    throw new Error("Telegram document is required");
+  }
+
+  return activeBotInstance.telegram.sendDocument(normalizedChatId, document, extra);
+}
+
 module.exports = {
   attachBot,
   isBotAvailable,
-  sendTelegramMessage
+  sendTelegramMessage,
+  sendTelegramDocument
 };

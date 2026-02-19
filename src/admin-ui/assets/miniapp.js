@@ -429,7 +429,7 @@
 
   async function loadUniversity() {
     var userId = ensureUser();
-    var data = await api("/api/university/my/" + userId + "?limit=120");
+    var data = await api("/api/miniapp/university/my/" + userId + "?limit=120");
     state.university.all = normalizeUniversityItems(data.modules || {});
     renderUniversityFilters();
     applyUniversityFilters();
@@ -476,20 +476,22 @@
       pageItems
         .map(function (item) {
           var metaLines = String(item.description || "").split(/\n+/).slice(0, 3).join(" | ");
-          var downloadUrl = item.drive_link || item.external_link || "";
+          var hasFile = Boolean(item.has_file);
           return (
             "<div class='list-item'>" +
             "<div class='list-title'>" + esc(item.title || "-") + " " + statusPill(item._kind) + "</div>" +
-            "<div class='list-meta'>" + esc(metaLines || "بیان چیزی وجود ندارد") + "</div>" +
+            "<div class='list-meta'>" + esc(metaLines || "No description") + "</div>" +
             "<div class='list-actions'>" +
-            (downloadUrl ? "<a class='btn' href='" + esc(downloadUrl) + "' target='_blank'>باز / داونلود</a>" : "<span class='pill warn'>لینک فایل وجود ندارد</span>") +
+            (hasFile
+              ? "<button class='btn uni-request-download' data-id='" + Number(item.id) + "'>Send In Telegram</button>"
+              : "<span class='pill warn'>No downloadable file</span>") +
             "</div></div>"
           );
         })
-        .join("") || "<div class='list-item'>موردی یافت نشد.</div>";
+        .join("") || "<div class='list-item'>No item found.</div>";
 
     var totalPages = Math.max(1, Math.ceil(state.university.filtered.length / state.university.pageSize));
-    el("uniPageLabel").textContent = "صفحه " + (state.university.page + 1) + " از " + totalPages;
+    el("uniPageLabel").textContent = "Page " + (state.university.page + 1) + " of " + totalPages;
   }
 
   async function loadIndustryHome() {
@@ -1113,6 +1115,7 @@
     }
 
     document.body.addEventListener("click", function (event) {
+      var uniRequestDownloadBtn = event.target.closest(".uni-request-download");
       var applyBtn = event.target.closest(".ind-apply");
       var saveBtn = event.target.closest(".ind-save");
       var startBtn = event.target.closest(".ind-start-project");
@@ -1134,6 +1137,20 @@
       var unsaveBtn = event.target.closest(".ind-unsave");
       var savedDetailBtn = event.target.closest(".ind-saved-detail");
       var resourceDetailBtn = event.target.closest(".ind-resource-detail");
+
+      if (uniRequestDownloadBtn) {
+        api("/api/miniapp/university/request-download", {
+          method: "POST",
+          body: {
+            userId: ensureUser(),
+            contentId: Number(uniRequestDownloadBtn.dataset.id)
+          }
+        })
+          .then(function () {
+            toast("File sent to your Telegram chat", "ok");
+          })
+          .catch(onError);
+      }
 
       if (applyBtn) {
         api("/api/industry/student/opportunities/" + Number(applyBtn.dataset.id) + "/apply", { method: "POST", body: { userId: ensureUser() } })
