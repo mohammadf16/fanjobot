@@ -4,6 +4,7 @@
     tgUser: null,
     user: null,
     profile: null,
+    industryProfile: null,
     isAdmin: false,
     activeTab: "dashboard",
     university: {
@@ -12,21 +13,41 @@
       page: 0,
       pageSize: 5
     },
+    industry: {
+      opportunities: [],
+      oppPage: 0,
+      projects: [],
+      projPage: 0,
+      applications: [],
+      savedOpportunities: [],
+      workspace: [],
+      resources: [],
+      resourcePage: 0,
+      selectedOpportunity: null,
+      selectedProject: null
+    },
+    path: {
+      goals: [],
+      tasks: [],
+      artifacts: [],
+      summary: {}
+    },
     admin: {
       support: [],
-      submissions: []
+      submissions: [],
+      notifications: []
     }
   };
 
   var TAB_ITEMS = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "profile", label: "Profile" },
-    { key: "university", label: "University" },
-    { key: "industry", label: "Industry" },
-    { key: "path", label: "My Path" },
-    { key: "support", label: "Support" },
-    { key: "submissions", label: "Submissions" },
-    { key: "admin", label: "Admin" }
+    { key: "dashboard", label: "داشبورد" },
+    { key: "profile", label: "پروفایل" },
+    { key: "university", label: "دانشگاه" },
+    { key: "industry", label: "صنعت" },
+    { key: "path", label: "مسیر من" },
+    { key: "support", label: "پشتیبانی" },
+    { key: "submissions", label: "آپلودها" },
+    { key: "admin", label: "ادمین" }
   ];
 
   function el(id) {
@@ -65,13 +86,34 @@
     return Array.isArray(value) ? value : [];
   }
 
+  var STATUS_LABELS = {
+    open: "باز",
+    approved: "تایید شده",
+    accepted: "پذیرفته شده",
+    done: "انجام شد",
+    completed: "تکمیل شد",
+    published: "منتشر شد",
+    answered: "پاسخ داده شد",
+    in_progress: "در حال انجام",
+    pending: "در انتظار",
+    submitted: "ارسال شد",
+    viewed: "دیده شد",
+    interview: "مصاحبه",
+    todo: "انجام نشده",
+    doing: "در حال انجام",
+    draft: "پیش‌نویس",
+    rejected: "رد شده",
+    closed: "بسته\u200c\u200c"
+  };
+
   function statusPill(status) {
     var normalized = String(status || "").toLowerCase();
     var cls = "pill";
     if (["open", "approved", "accepted", "done", "completed", "published", "answered", "in_progress"].includes(normalized)) cls += " ok";
     else if (["pending", "submitted", "viewed", "interview", "todo", "doing", "draft"].includes(normalized)) cls += " warn";
     else if (["rejected", "closed"].includes(normalized)) cls += " bad";
-    return "<span class='" + cls + "'>" + esc(status || "-") + "</span>";
+    var displayText = STATUS_LABELS[normalized] || String(status || "-");
+    return "<span class='" + cls + "'>" + esc(displayText) + "</span>";
   }
 
   function toast(message, type) {
@@ -80,6 +122,7 @@
     var node = document.createElement("div");
     node.className = "toast " + (type || "");
     node.textContent = String(message || "");
+    node.style.direction = "rtl";
     host.appendChild(node);
     window.setTimeout(function () {
       if (node.parentNode) node.parentNode.removeChild(node);
@@ -171,6 +214,7 @@
     });
 
     if (key === "dashboard") loadDashboard().catch(onError);
+    if (key === "profile") buildProfileForm();
     if (key === "university") loadUniversity().catch(onError);
     if (key === "industry") loadIndustryHome().catch(onError);
     if (key === "path") loadPath().catch(onError);
@@ -182,12 +226,21 @@
   }
 
   function renderDashCards(counters) {
+    var labelMap = {
+      support: "تیکت پشتیبانی",
+      submissions: "آپلود",
+      applications: "درخواست",
+      projects: "پروژه",
+      tasks: "تسک",
+      goals: "هدف"
+    };
     var cards = [];
     Object.keys(counters || {}).forEach(function (key) {
       var total = asArray(counters[key]).reduce(function (acc, row) {
         return acc + Number(row.total || 0);
       }, 0);
-      cards.push({ label: key, value: total });
+      var displayLabel = labelMap[key] || key;
+      cards.push({ label: displayLabel, value: total });
     });
 
     el("dashCards").innerHTML = cards
@@ -211,12 +264,12 @@
     renderDashCards(data.counters || {});
 
     renderKv("dashProfile", [
-      { key: "Name", value: data.profile.full_name },
-      { key: "Major", value: data.profile.major },
-      { key: "Term", value: data.profile.term },
-      { key: "Skill level", value: data.profile.skill_level },
-      { key: "Goal", value: data.profile.short_term_goal },
-      { key: "Weekly hours", value: data.profile.weekly_hours }
+      { key: "نام", value: data.profile.full_name },
+      { key: "رشته", value: data.profile.major },
+      { key: "ترم", value: data.profile.term },
+      { key: "سطح مهارت", value: data.profile.skill_level },
+      { key: "هدف کوتاه مدت", value: data.profile.short_term_goal },
+      { key: "ساعات هفتگی", value: data.profile.weekly_hours }
     ]);
 
     el("dashEvents").innerHTML =
@@ -224,11 +277,11 @@
         .map(function (event) {
           return "<div class='list-item'><div class='list-title'>" + esc(event.event_type || "-") + "</div><div class='list-meta'>" + esc(toDateLabel(event.created_at)) + "</div></div>";
         })
-        .join("") || "<div class='list-item'>No recent events.</div>";
+        .join("") || "<div class='list-item'>رویدادی به تازگی ایجاد نشده است.</div>";
   }
 
   function field(label, name, value, type) {
-    return "<div class='form-row'><label for='" + name + "'>" + esc(label) + "</label><input id='" + name + "' type='" + (type || "text") + "' value='" + esc(value) + "' /></div>";
+    return "<div class='form-row'><label for='" + name + "' style='text-align: right;'>" + esc(label) + "</label><input id='" + name + "' type='" + (type || "text") + "' value='" + esc(value) + "' style='direction: rtl; text-align: right;' /></div>";
   }
 
   function parseSkills(raw) {
@@ -247,21 +300,21 @@
   function buildProfileForm() {
     var p = state.profile || {};
     el("profileForm").innerHTML = [
-      field("University", "university", p.university || ""),
-      field("City", "city", p.city || ""),
-      field("Major", "major", p.major || ""),
-      field("Level", "level", p.level || ""),
-      field("Term", "term", p.term || ""),
-      field("Skill level", "skillLevel", p.skill_level || ""),
-      field("Short-term goal", "shortTermGoal", p.short_term_goal || ""),
-      field("Weekly free hours", "weeklyHours", p.weekly_hours || 8, "number"),
-      field("Interests (comma separated)", "interests", asArray(p.interests).join(", ")),
-      field("Skills (name:score)", "skills", asArray(p.skills).map(function (s) { return s.name + ":" + (s.score || 5); }).join(", ")),
-      field("Passed courses", "passedCourses", asArray(p.passed_courses).join(", ")),
-      field("Resume URL", "resumeUrl", p.resume_url || ""),
-      field("GitHub URL", "githubUrl", p.github_url || ""),
-      field("Portfolio URL", "portfolioUrl", p.portfolio_url || ""),
-      "<button id='profileSaveBtn' class='btn' type='button'>Save profile</button>"
+      field("دانشگاه", "university", p.university || ""),
+      field("شهر", "city", p.city || ""),
+      field("رشته تحصیلی", "major", p.major || ""),
+      field("سطح", "level", p.level || ""),
+      field("ترم", "term", p.term || ""),
+      field("سطح مهارت", "skillLevel", p.skill_level || ""),
+      field("هدف کوتاه مدت", "shortTermGoal", p.short_term_goal || ""),
+      field("ساعات آزاد هفتگی", "weeklyHours", p.weekly_hours || 8, "number"),
+      field("علایق (جدا شده با کاما)", "interests", asArray(p.interests).join(", ")),
+      field("مهارت‌ها (نام:امتیاز)", "skills", asArray(p.skills).map(function (s) { return s.name + ":" + (s.score || 5); }).join(", ")),
+      field("دروس گذرانده شده", "passedCourses", asArray(p.passed_courses).join(", ")),
+      field("لینک رزومه", "resumeUrl", p.resume_url || ""),
+      field("لینک GitHub", "githubUrl", p.github_url || ""),
+      field("لینک نمونه کار", "portfolioUrl", p.portfolio_url || ""),
+      "<button id='profileSaveBtn' class='btn' type='button'>ذخیره پروفایل</button>"
     ].join("");
 
     el("profileSaveBtn").addEventListener("click", function () {
@@ -291,7 +344,7 @@
 
     var res = await api("/api/profile/upsert", { method: "POST", body: payload });
     state.profile = Object.assign({}, state.profile || {}, res.profile || {});
-    toast("Profile saved", "ok");
+    toast("پروفایل ذخیره شد", "ok");
   }
   function normalizeUniversityItems(modules) {
     var map = {
@@ -323,9 +376,21 @@
   }
 
   function renderUniversityFilters() {
+    var kindLabels = {
+      "": "همه",
+      "course": "درس",
+      "professor": "استاد",
+      "note": "ا݂ور",
+      "book": "کتاب",
+      "resource": "منبع",
+      "video": "ویدیو",
+      "sample-question": "نمونه پرسش",
+      "summary": "خلاصه",
+      "exam-tip": "راهنمایی امتحان"
+    };
     var kinds = ["", "course", "professor", "note", "book", "resource", "video", "sample-question", "summary", "exam-tip"];
     el("uniKindFilter").innerHTML = kinds.map(function (kind) {
-      var label = kind || "all";
+      var label = kindLabels[kind];
       return "<option value='" + kind + "'>" + label + "</option>";
     }).join("");
   }
@@ -355,20 +420,28 @@
           return (
             "<div class='list-item'>" +
             "<div class='list-title'>" + esc(item.title || "-") + " " + statusPill(item._kind) + "</div>" +
-            "<div class='list-meta'>" + esc(metaLines || "No description") + "</div>" +
+            "<div class='list-meta'>" + esc(metaLines || "بیان چیزی وجود ندارد") + "</div>" +
             "<div class='list-actions'>" +
-            (downloadUrl ? "<a class='btn' href='" + esc(downloadUrl) + "' target='_blank'>Open / Download</a>" : "<span class='pill warn'>No file link</span>") +
+            (downloadUrl ? "<a class='btn' href='" + esc(downloadUrl) + "' target='_blank'>باز / داونلود</a>" : "<span class='pill warn'>لینک فایل وجود ندارد</span>") +
             "</div></div>"
           );
         })
-        .join("") || "<div class='list-item'>No item found.</div>";
+        .join("") || "<div class='list-item'>موردی یافت نشد.</div>";
 
     var totalPages = Math.max(1, Math.ceil(state.university.filtered.length / state.university.pageSize));
-    el("uniPageLabel").textContent = "Page " + (state.university.page + 1) + " of " + totalPages;
+    el("uniPageLabel").textContent = "صفحه " + (state.university.page + 1) + " از " + totalPages;
   }
 
   async function loadIndustryHome() {
-    await Promise.all([loadIndustryOpportunities(), loadIndustryProjects(), loadIndustryApplications()]);
+    await Promise.all([
+      loadIndustryProfile(),
+      loadIndustryOpportunities(),
+      loadIndustryProjects(),
+      loadIndustryApplications(),
+      loadIndustryWorkspace(),
+      loadIndustrySavedOpportunities(),
+      loadIndustryResources()
+    ]);
   }
 
   async function loadIndustryOpportunities() {
@@ -384,52 +457,180 @@
           return (
             "<div class='list-item'>" +
             "<div class='list-title'>" + esc(item.title || "-") + " " + statusPill(item.level || "-") + "</div>" +
-            "<div class='list-meta'>" + esc(item.company_name || "-") + " | match: " + Number(item.matchScore || 0).toFixed(1) + "</div>" +
+            "<div class='list-meta'>" + esc(item.company_name || "-") + " | مطابقت: " + Number(item.matchScore || 0).toFixed(1) + "</div>" +
             "<div class='list-actions'>" +
-            "<button class='btn ind-apply' data-id='" + item.id + "'>Apply</button>" +
-            "<button class='btn ghost ind-save' data-id='" + item.id + "'>Save</button>" +
+            "<button class='btn ind-apply' data-id='" + item.id + "'>درخواست</button>" +
+            "<button class='btn ghost ind-save' data-id='" + item.id + "'>ذخیره</button>" +
             "</div></div>"
           );
         })
-        .join("") || "<div class='list-item'>No opportunity found.</div>";
+        .join("") || "<div class='list-item'>فرصتی یافت نشد.</div>";
   }
 
   async function loadIndustryProjects() {
     var userId = ensureUser();
     var data = await api("/api/industry/student/projects?userId=" + userId + "&limit=20");
+    state.industry.projects = asArray(data.items);
+    renderIndustryProjects();
+  }
 
+  function renderIndustryProjects() {
     el("indProjectList").innerHTML =
-      asArray(data.items)
+      state.industry.projects
         .map(function (item) {
           return (
             "<div class='list-item'>" +
             "<div class='list-title'>" + esc(item.title || "-") + " " + statusPill(item.level || "-") + "</div>" +
-            "<div class='list-meta'>Estimated: " + esc(item.estimated_hours || "-") + " h</div>" +
-            "<div class='list-actions'><button class='btn ind-start-project' data-id='" + item.id + "'>Start project</button></div>" +
+            "<div class='list-meta'>تخمینی: " + esc(item.estimated_hours || "-") + " ساعت</div>" +
+            "<div class='list-actions'><button class='btn ind-start-project' data-id='" + item.id + "'>شروع پروژه</button></div>" +
             "</div>"
           );
         })
-        .join("") || "<div class='list-item'>No project found.</div>";
+        .join("") || "<div class='list-item'>پروژه یافت نشد.</div>";
+  }
+
+  async function loadIndustryProfile() {
+    var userId = ensureUser();
+    var data = await api("/api/industry/student/profile/" + userId);
+    state.industryProfile = data.profile || {};
+    renderIndustryProfileForm();
+  }
+
+  function renderIndustryProfileForm() {
+    var p = state.industryProfile || {};
+    el("industryProfileForm").innerHTML = [
+      field("شغل مورد نظر", "targetJob", p.target_job || ""),
+      field("سطح تجربه", "experienceLevel", p.experience_level || ""),
+      field("محل کار ترجیحی", "preferredLocation", p.preferred_location || ""),
+      field("نوع شغل ترجیحی", "preferredJobType", p.preferred_job_type || ""),
+      field("حداقل حقوق مورد نظر", "salary", p.expected_salary || "", "number"),
+      field("درباره شما", "about", p.about || ""),
+      "<textarea id='careerSummary' placeholder='خلاصه شغلی شما' style='direction: rtl; text-align: right; min-height: 80px;'>" + esc(p.career_summary || "") + "</textarea>",
+      "<button id='industrySaveBtn' class='btn' type='button'>ذخیره پروفایل صنعتی</button>"
+    ].join("");
+
+    el("industrySaveBtn").addEventListener("click", function () {
+      saveIndustryProfile().catch(onError);
+    });
+  }
+
+  async function saveIndustryProfile() {
+    var userId = ensureUser();
+    var payload = {
+      userId: userId,
+      targetJob: el("targetJob").value,
+      experienceLevel: el("experienceLevel").value,
+      preferredLocation: el("preferredLocation").value,
+      preferredJobType: el("preferredJobType").value,
+      expectedSalary: Number(el("salary").value || 0),
+      about: el("about").value || null,
+      careerSummary: el("careerSummary").value || null
+    };
+
+    var res = await api("/api/industry/student/profile/" + userId, { method: "PUT", body: payload });
+    state.industryProfile = res.profile || {};
+    toast("پروفایل صنعتی ذخیره شد", "ok");
   }
 
   async function loadIndustryWorkspace() {
     var userId = ensureUser();
-    var data = await api("/api/miniapp/industry/workspace/" + userId + "?limit=20");
+    var data = await api("/api/miniapp/industry/workspace/" + userId + "?limit=30");
+    state.industry.workspace = asArray(data.items);
+    renderIndustryWorkspace();
+  }
 
-    el("indProjectList").innerHTML =
-      asArray(data.items)
+  function renderIndustryWorkspace() {
+    el("indWorkspaceList").innerHTML =
+      state.industry.workspace
         .map(function (item) {
           return (
             "<div class='list-item'>" +
             "<div class='list-title'>" + esc(item.project_title || "-") + " " + statusPill(item.status || "-") + "</div>" +
-            "<div class='list-meta'>Progress: " + Number(item.progress || 0) + "% | output links: " + asArray(item.output_links).length + "</div>" +
+            "<div class='list-meta'>پیشرفت: " + Number(item.progress || 0) + "% | لینک‌ها: " + asArray(item.output_links).length + "</div>" +
             "<div class='list-actions'>" +
-            "<button class='btn ghost ind-progress' data-id='" + item.id + "'>Set progress</button>" +
-            "<button class='btn ghost ind-link' data-id='" + item.id + "'>Add link</button>" +
+            "<button class='btn ghost ind-progress' data-id='" + item.id + "'>تعیین پیشرفت</button>" +
+            "<button class='btn ghost ind-link' data-id='" + item.id + "'>افزودن لینک</button>" +
+            "<button class='btn ghost ind-workspace-detail' data-id='" + item.id + "'>جزئیات</button>" +
             "</div></div>"
           );
         })
-        .join("") || "<div class='list-item'>No active project.</div>";
+        .join("") || "<div class='list-item'>پروژه فعالی یافت نشد.</div>";
+  }
+
+  async function showWorkspaceDetail(workspaceId) {
+    var item = state.industry.workspace.find(function (w) { return w.id === workspaceId; });
+    if (!item) {
+      toast("پروژه یافت نشد", "bad");
+      return;
+    }
+    
+    var details = "پروژه: " + item.project_title + "\n" +
+                  "وضعیت: " + (STATUS_LABELS[item.status] || item.status) + "\n" +
+                  "پیشرفت: " + item.progress + "%\n" +
+                  "تاریخ شروع: " + toDateLabel(item.started_at) + "\n" +
+                  "تاریخ آپدیت: " + toDateLabel(item.updated_at) + "\n\n" +
+                  "لینک‌های خروجی:\n" + asArray(item.output_links).map(function (l) { return "• " + l; }).join("\n") || "لینکی ثبت نشده";
+    
+    window.alert(details);
+  }
+
+  async function loadIndustrySavedOpportunities() {
+    var userId = ensureUser();
+    var data = await api("/api/industry/student/saved-opportunities/" + userId + "?limit=20");
+    state.industry.savedOpportunities = asArray(data.items);
+    renderIndustrySavedOpportunities();
+  }
+
+  function renderIndustrySavedOpportunities() {
+    el("indSavedOppList").innerHTML =
+      state.industry.savedOpportunities
+        .map(function (item) {
+          return (
+            "<div class='list-item'>" +
+            "<div class='list-title'>" + esc(item.title || "-") + " " + statusPill(item.level || "-") + "</div>" +
+            "<div class='list-meta'>" + esc(item.company_name || "-") + " | مطابقت: " + Number(item.matchScore || 0).toFixed(1) + "</div>" +
+            "<div class='list-actions'>" +
+            "<button class='btn ind-saved-apply' data-id='" + item.id + "'>درخواست</button>" +
+            "<button class='btn danger ind-unsave' data-id='" + item.id + "'>حذف</button>" +
+            "<button class='btn ghost ind-saved-detail' data-id='" + item.id + "'>جزئیات</button>" +
+            "</div></div>"
+          );
+        })
+        .join("") || "<div class='list-item'>فرصت ذخیره شده‌ای یافت نشد.</div>";
+  }
+
+  async function loadIndustryResources() {
+    var userId = ensureUser();
+    var category = el("resCategory").value || "";
+    var query = "/api/industry/resources?limit=20";
+    if (category) query += "&category=" + encodeURIComponent(category);
+    var data = await api(query);
+    state.industry.resources = asArray(data.items);
+    state.industry.resourcePage = 0;
+    renderIndustryResources();
+  }
+
+  function renderIndustryResources() {
+    var start = state.industry.resourcePage * 5;
+    var pageItems = state.industry.resources.slice(start, start + 5);
+    
+    el("indResourceList").innerHTML =
+      pageItems
+        .map(function (item) {
+          return (
+            "<div class='list-item'>" +
+            "<div class='list-title'>" + esc(item.title || "-") + " " + statusPill(item.category || "-") + "</div>" +
+            "<div class='list-meta'>" + esc(item.description || "-") + "</div>" +
+            "<div class='list-actions'>" +
+            (item.url ? "<a class='btn' href='" + esc(item.url) + "' target='_blank'>باز / دانلود</a>" : "") +
+            "<button class='btn ghost ind-resource-detail' data-id='" + item.id + "'>بیشتر</button>" +
+            "</div></div>"
+          );
+        })
+        .join("") || "<div class='list-item'>منبعی یافت نشد.</div>";
+    
+    var totalPages = Math.max(1, Math.ceil(state.industry.resources.length / 5));
+    el("resPageLabel").textContent = "صفحه " + (state.industry.resourcePage + 1) + " از " + totalPages;
   }
 
   async function loadIndustryApplications() {
@@ -439,25 +640,29 @@
     el("indApplications").innerHTML =
       asArray(data.items)
         .map(function (item) {
-          return "<div class='list-item'><div class='list-title'>" + esc(item.opportunity_title || "-") + " " + statusPill(item.status || "-") + "</div><div class='list-meta'>Updated: " + esc(toDateLabel(item.updated_at)) + "</div></div>";
+          return "<div class='list-item'><div class='list-title'>" + esc(item.opportunity_title || "-") + " " + statusPill(item.status || "-") + "</div><div class='list-meta'>به روز: " + esc(toDateLabel(item.updated_at)) + "</div></div>";
         })
-        .join("") || "<div class='list-item'>No application found.</div>";
+        .join("") || "<div class='list-item'>درخواستی یافت نشد.</div>";
   }
 
   async function loadPath() {
     var userId = ensureUser();
     var data = await api("/api/miniapp/my-path/" + userId);
+    state.path.summary = data.summary || {};
+    state.path.goals = asArray(data.goals);
+    state.path.tasks = asArray(data.tasks);
+    state.path.artifacts = asArray(data.artifacts);
     renderPathSummary(data.summary || {});
     renderPathLists(data);
   }
 
   function renderPathSummary(summary) {
     el("pathSummary").innerHTML = [
-      { label: "Goals", value: summary.totalGoals || 0 },
-      { label: "Tasks", value: summary.totalTasks || 0 },
-      { label: "Done", value: summary.doneTasks || 0 },
-      { label: "Artifacts", value: summary.totalArtifacts || 0 },
-      { label: "Completion", value: (summary.completionRate || 0) + "%" }
+      { label: "هدف‌ها", value: summary.totalGoals || 0 },
+      { label: "تسك‌ها", value: summary.totalTasks || 0 },
+      { label: "انجام شده", value: summary.doneTasks || 0 },
+      { label: "موارد", value: summary.totalArtifacts || 0 },
+      { label: "پیشرفت", value: (summary.completionRate || 0) + "%" }
     ].map(function (item) {
       return "<div class='card-item'><div class='value'>" + esc(item.value) + "</div><div class='label'>" + esc(item.label) + "</div></div>";
     }).join("");
@@ -465,35 +670,127 @@
 
   function renderPathLists(data) {
     el("pathGoals").innerHTML = asArray(data.goals).map(function (goal) {
-      return "<div class='list-item'><div class='list-title'>" + esc(goal.title) + " " + statusPill(goal.status) + "</div><div class='list-meta'>type: " + esc(goal.type) + " | progress: " + Number(goal.progress_percent || 0) + "%</div></div>";
-    }).join("") || "<div class='list-item'>No goal found.</div>";
+      var typeLabels = { "academic": "تحصیلی", "career": "شغلی", "project": "پروژه", "application": "درخواست" };
+      var typeLabel = typeLabels[goal.type] || goal.type;
+      var endDate = goal.deadline ? " | سررسید: " + toDateLabel(goal.deadline) : "";
+      return (
+        "<div class='list-item'>" +
+        "<div class='list-title'>" + esc(goal.title) + " " + statusPill(goal.status) + "</div>" +
+        "<div class='list-meta'>نوع: " + esc(typeLabel) + " | پیشرفت: " + Number(goal.progress_percent || 0) + "%" + endDate + "</div>" +
+        "<div class='list-actions'>" +
+        "<button class='btn ghost path-goal-detail' data-id='" + goal.id + "'>جزئیات</button>" +
+        "<button class='btn danger path-goal-delete' data-id='" + goal.id + "'>حذف</button>" +
+        "</div>" +
+        "</div>"
+      );
+    }).join("") || "<div class='list-item'>هدفی یافت نشد.</div>";
 
     el("pathTasks").innerHTML = asArray(data.tasks).map(function (task) {
-      return "<div class='list-item'><div class='list-title'>" + esc(task.title) + " " + statusPill(task.status) + "</div><div class='list-actions'><button class='btn ghost path-task-status' data-id='" + task.id + "' data-status='doing'>Start</button><button class='btn path-task-status' data-id='" + task.id + "' data-status='done'>Mark done</button></div></div>";
-    }).join("") || "<div class='list-item'>No task found.</div>";
+      var typeLabels = { "study": "مطالعه", "practice": "تمرین", "project": "پروژه", "apply": "درخواست", "interview": "مصاحبه" };
+      var dueDate = task.due_date ? " | موعد: " + toDateLabel(task.due_date) : "";
+      return (
+        "<div class='list-item'>" +
+        "<div class='list-title'>" + esc(task.title) + " " + statusPill(task.status) + "</div>" +
+        "<div class='list-meta'>نوع: " + esc(typeLabels[task.type] || task.type) + dueDate + "</div>" +
+        "<div class='list-actions'>" +
+        "<button class='btn ghost path-task-status' data-id='" + task.id + "' data-status='doing'>شروع</button>" +
+        "<button class='btn path-task-status' data-id='" + task.id + "' data-status='done'>انجام شد</button>" +
+        "<button class='btn danger path-task-delete' data-id='" + task.id + "'>حذف</button>" +
+        "</div>" +
+        "</div>"
+      );
+    }).join("") || "<div class='list-item'>تسكی یافت نشد.</div>";
 
     el("pathArtifacts").innerHTML = asArray(data.artifacts).map(function (artifact) {
-      var link = artifact.url ? "<a class='btn ghost' href='" + esc(artifact.url) + "' target='_blank'>Open</a>" : "";
-      return "<div class='list-item'><div class='list-title'>" + esc(artifact.title) + " " + statusPill(artifact.type) + "</div><div class='list-actions'>" + link + "</div></div>";
-    }).join("") || "<div class='list-item'>No artifact found.</div>";
+      var link = artifact.url ? "<a class='btn ghost' href='" + esc(artifact.url) + "' target='_blank'>باز</a>" : "";
+      var typeLabels = { "github": "GitHub", "demo": "نمایش", "file": "فایل", "certificate": "مدرک", "resume_bullet": "رزومه" };
+      return (
+        "<div class='list-item'>" +
+        "<div class='list-title'>" + esc(artifact.title) + " " + statusPill(typeLabels[artifact.type] || artifact.type) + "</div>" +
+        "<div class='list-meta'>تاریخ ایجاد: " + toDateLabel(artifact.created_at) + "</div>" +
+        "<div class='list-actions'>" + link +
+        "<button class='btn ghost path-artifact-delete' data-id='" + artifact.id + "'>حذف</button>" +
+        "</div>" +
+        "</div>"
+      );
+    }).join("") || "<div class='list-item'>موردی یافت نشد.</div>";
+  }
+
+  async function deletePathGoal(goalId) {
+    if (!confirm("آیا از حذف این هدف مطمئن هستید؟")) return;
+    var userId = ensureUser();
+    await api("/api/miniapp/my-path/goals/" + goalId, { method: "DELETE", body: { userId: userId } });
+    toast("هدف حذف شد", "ok");
+    loadPath().catch(onError);
+  }
+
+  async function deletePathTask(taskId) {
+    if (!confirm("آیا از حذف این تسک مطمئن هستید؟")) return;
+    var userId = ensureUser();
+    await api("/api/miniapp/my-path/tasks/" + taskId, { method: "DELETE", body: { userId: userId } });
+    toast("تسک حذف شد", "ok");
+    loadPath().catch(onError);
+  }
+
+  async function deletePathArtifact(artifactId) {
+    if (!confirm("آیا از حذف این مورد مطمئن هستید؟")) return;
+    var userId = ensureUser();
+    await api("/api/miniapp/my-path/artifacts/" + artifactId, { method: "DELETE", body: { userId: userId } });
+    toast("مورد حذف شد", "ok");
+    loadPath().catch(onError);
+  }
+
+  async function showPathGoalDetail(goalId) {
+    var goal = state.path.goals.find(function (g) { return g.id === goalId; });
+    if (!goal) {
+      toast("هدف یافت نشد", "bad");
+      return;
+    }
+    
+    var typeLabels = { "academic": "تحصیلی", "career": "شغلی", "project": "پروژه", "application": "درخواست" };
+    var details = "عنوان: " + goal.title + "\n" +
+                  "نوع: " + typeLabels[goal.type] + "\n" +
+                  "وضعیت: " + (STATUS_LABELS[goal.status] || goal.status) + "\n" +
+                  "پیشرفت: " + goal.progress_percent + "%\n" +
+                  "تاریخ شروع: " + toDateLabel(goal.created_at) + "\n" +
+                  (goal.deadline ? "تاریخ سررسید: " + toDateLabel(goal.deadline) : "") + "\n\n" +
+                  "توضیح: " + (goal.description || "توضیحی وجود ندارد");
+    
+    window.alert(details);
   }
 
   async function loadSupportTickets() {
     var userId = ensureUser();
-    var data = await api("/api/support/my/" + userId + "/tickets?limit=30");
+    var status = el("supportStatusFilter").value || "";
+    var query = "/api/support/my/" + userId + "/tickets?limit=50";
+    if (status) query += "&status=" + encodeURIComponent(status);
+    var data = await api(query);
 
     el("supportList").innerHTML =
       asArray(data.items)
         .map(function (ticket) {
+          var daysOld = Math.floor((Date.now() - new Date(ticket.created_at).getTime()) / (1000 * 60 * 60 * 24));
+          var timeLabel = daysOld === 0 ? "امروز" : (daysOld === 1 ? "دیروز" : daysOld + " روز پیش");
           return (
             "<div class='list-item'>" +
             "<div class='list-title'>#" + Number(ticket.id) + " " + esc(ticket.subject || "-") + " " + statusPill(ticket.status || "-") + "</div>" +
+            "<div class='list-meta'>اولویت: " + (ticket.priority || "عام") + " | " + timeLabel + "</div>" +
             "<div class='list-meta'>" + esc(ticket.last_message || "-") + "</div>" +
-            "<div class='list-actions'><button class='btn ghost support-detail' data-id='" + ticket.id + "'>Detail / Reply</button></div>" +
+            "<div class='list-actions'>" +
+            "<button class='btn ghost support-detail' data-id='" + ticket.id + "'>جزئیات / پاسخ</button>" +
+            (ticket.status !== "closed" ? "<button class='btn danger support-close' data-id='" + ticket.id + "'>بستن</button>" : "") +
+            "</div>" +
             "</div>"
           );
         })
-        .join("") || "<div class='list-item'>No ticket found.</div>";
+        .join("") || "<div class='list-item'>تیکی یافت نشد.</div>";
+  }
+
+  async function closeSupportTicket(ticketId) {
+    var userId = ensureUser();
+    await api("/api/support/my/" + userId + "/tickets/" + ticketId + "/close", { method: "POST", body: {} });
+    toast("تیکت بسته شد", "ok");
+    loadSupportTickets().catch(onError);
   }
 
   async function loadMySubmissions() {
@@ -503,18 +800,18 @@
     el("submissionList").innerHTML =
       asArray(data.items)
         .map(function (item) {
-          return "<div class='list-item'><div class='list-title'>" + esc(item.title || "-") + " " + statusPill(item.status || "-") + "</div><div class='list-meta'>" + esc(item.moderation_reason || "Pending moderation") + "</div></div>";
+          return "<div class='list-item'><div class='list-title'>" + esc(item.title || "-") + " " + statusPill(item.status || "-") + "</div><div class='list-meta'>" + esc(item.moderation_reason || "در انتظر بررسی") + "</div></div>";
         })
-        .join("") || "<div class='list-item'>No submission found.</div>";
+        .join("") || "<div class='list-item'>آپلودی یافت نشد.</div>";
   }
 
   function renderAdminCards(overview) {
     var rows = [
-      { label: "Total users", value: overview.total_users || 0 },
-      { label: "Started bot users", value: overview.bot_started_users || 0 },
-      { label: "Open support tickets", value: overview.open_support_tickets || 0 },
-      { label: "Pending submissions", value: overview.pending_submissions || 0 },
-      { label: "Open admin notifications", value: overview.open_admin_notifications || 0 }
+      { label: "کل کاربران", value: overview.total_users || 0 },
+      { label: "کاربران ربات", value: overview.bot_started_users || 0 },
+      { label: "تیکت باز پشتیبانی", value: overview.open_support_tickets || 0 },
+      { label: "آپلود در انتظار", value: overview.pending_submissions || 0 },
+      { label: "اعله‌نامه باز", value: overview.open_admin_notifications || 0 }
     ];
     el("adminOverviewCards").innerHTML = rows
       .map(function (item) {
@@ -534,7 +831,7 @@
     el("adminSupportList").innerHTML =
       state.admin.support
         .map(function (ticket) {
-          var userName = ticket.full_name || ("User #" + Number(ticket.user_id || 0));
+          var userName = ticket.full_name || ("کاربر #" + Number(ticket.user_id || 0));
           return (
             "<div class='list-item'>" +
             "<div class='list-title'>#" +
@@ -552,14 +849,14 @@
             "<div class='list-actions'>" +
             "<button class='btn ghost admin-ticket-detail' data-id='" +
             ticket.id +
-            "'>Detail</button>" +
+            "'>جزئیات</button>" +
             "<button class='btn admin-ticket-reply' data-id='" +
             ticket.id +
-            "'>Reply</button>" +
+            "'>پاسخ</button>" +
             "</div></div>"
           );
         })
-        .join("") || "<div class='list-item'>No ticket found.</div>";
+        .join("") || "<div class='list-item'>تیکی یافت نشد.</div>";
   }
 
   function renderAdminSubmissions(items) {
@@ -577,19 +874,19 @@
             statusPill(item.status || "-") +
             "</div>" +
             "<div class='list-meta'>" +
-            esc((item.full_name || ("User #" + Number(item.user_id || 0))) + " | " + (item.section || "-") + " / " + (item.content_kind || "-")) +
+            esc((item.full_name || ("کاربر #" + Number(item.user_id || 0))) + " | " + (item.section || "-") + " / " + (item.content_kind || "-")) +
             "</div>" +
             "<div class='list-actions'>" +
             "<button class='btn admin-sub-approve' data-id='" +
             item.id +
-            "'>Approve</button>" +
+            "'>تایید</button>" +
             "<button class='btn danger admin-sub-reject' data-id='" +
             item.id +
-            "'>Reject</button>" +
+            "'>رد</button>" +
             "</div></div>"
           );
         })
-        .join("") || "<div class='list-item'>No submission found.</div>";
+        .join("") || "<div class='list-item'>آپلودی یافت نشد.</div>";
   }
 
   async function loadAdminOverview() {
@@ -624,13 +921,13 @@
 
   async function adminTicketReply(ticketId) {
     ensureAdmin();
-    var message = window.prompt("Reply text:", "");
+    var message = window.prompt("متن پاسخ:", "");
     if (!message || !message.trim()) return;
     await api("/api/miniapp/admin/support/tickets/" + ticketId + "/reply?" + adminAuthQuery(), {
       method: "POST",
       body: { message: message.trim(), status: "answered" }
     });
-    toast("Support reply sent", "ok");
+    toast("پاسخ پشتیبانی ارسال شد", "ok");
     await loadAdminSupportTickets();
   }
 
@@ -638,22 +935,22 @@
     ensureAdmin();
     var reason = null;
     if (action === "reject") {
-      reason = window.prompt("Reject reason:", "");
+      reason = window.prompt("دلیل رد:", "");
       if (reason === null) return;
-      reason = String(reason || "").trim() || "Rejected by admin moderation";
+      reason = String(reason || "").trim() || "رد شده بوسیله بررسی ادمین";
     }
     await api("/api/miniapp/admin/moderation/submissions/" + submissionId + "/review?" + adminAuthQuery(), {
       method: "POST",
       body: { action: action, reason: reason }
     });
-    toast(action === "approve" ? "Submission approved" : "Submission rejected", "ok");
+    toast(action === "approve" ? "آپلود تایید شد" : "آپلود رد شد", "ok");
     await loadAdminSubmissions();
   }
 
   async function adminRunBroadcast() {
     ensureAdmin();
     var message = String((el("adminBroadcastMessage") || {}).value || "").trim();
-    if (!message) throw new Error("Broadcast message is required.");
+    if (!message) throw new Error("پیام الزامی است.");
     var limit = Number((el("adminBroadcastLimit") || {}).value || 0);
     var dryRun = Boolean((el("adminBroadcastDryRun") || {}).checked);
 
@@ -667,11 +964,11 @@
     });
 
     if (result.dryRun) {
-      toast("Dry run complete: " + Number(result.totalRecipients || 0) + " users", "warn");
+      toast("اجرای آزمایشی موفق: " + Number(result.totalRecipients || 0) + " کاربر", "warn");
       return;
     }
     toast(
-      "Broadcast sent: " +
+      "پیام ارسال شد: " +
         Number(result.sentCount || 0) +
         "/" +
         Number(result.totalRecipients || 0),
@@ -683,22 +980,22 @@
     var userId = ensureUser();
     var data = await api("/api/support/my/" + userId + "/tickets/" + ticketId);
     var textLog = asArray(data.messages).map(function (m) {
-      var role = String(m.sender_role || "") === "admin" ? "Admin" : "User";
+      var role = String(m.sender_role || "") === "admin" ? "ادمین" : "کاربر";
       return "[" + role + "] " + (m.message_text || "");
     }).join("\n\n");
 
-    var reply = window.prompt("Reply to ticket #" + ticketId + ":", "");
+    var reply = window.prompt("پاسخ به تیکت #" + ticketId + ":", "");
     if (reply && reply.trim()) {
       await api("/api/support/my/" + userId + "/tickets/" + ticketId + "/reply", {
         method: "POST",
         body: { message: reply.trim() }
       });
-      toast("Reply sent", "ok");
+      toast("پاسخ ارسال شد", "ok");
       await loadSupportTickets();
       return;
     }
 
-    window.alert(textLog || "No message.");
+    window.alert(textLog || "هیچ پیامی وجود ندارد.");
   }
   function bindStaticActions() {
     el("miniRefreshAllBtn").addEventListener("click", function () {
@@ -727,6 +1024,18 @@
     el("indLoadOppBtn").addEventListener("click", function () { loadIndustryOpportunities().catch(onError); });
     el("indLoadProjectsBtn").addEventListener("click", function () { loadIndustryProjects().catch(onError); });
     el("indLoadWorkspaceBtn").addEventListener("click", function () { loadIndustryWorkspace().catch(onError); });
+    el("indLoadSavedBtn").addEventListener("click", function () { loadIndustrySavedOpportunities().catch(onError); });
+    el("indLoadResourcesBtn").addEventListener("click", function () { loadIndustryResources().catch(onError); });
+
+    el("resPrevBtn").addEventListener("click", function () {
+      state.industry.resourcePage = Math.max(0, state.industry.resourcePage - 1);
+      renderIndustryResources();
+    });
+    el("resNextBtn").addEventListener("click", function () {
+      var totalPages = Math.max(1, Math.ceil(state.industry.resources.length / 5));
+      state.industry.resourcePage = Math.min(totalPages - 1, state.industry.resourcePage + 1);
+      renderIndustryResources();
+    });
 
     if (state.isAdmin) {
       el("adminLoadOverviewBtn").addEventListener("click", function () {
@@ -750,56 +1059,72 @@
       var progressBtn = event.target.closest(".ind-progress");
       var linkBtn = event.target.closest(".ind-link");
       var supportDetailBtn = event.target.closest(".support-detail");
+      var supportCloseBtn = event.target.closest(".support-close");
       var pathTaskStatusBtn = event.target.closest(".path-task-status");
+      var pathGoalDetailBtn = event.target.closest(".path-goal-detail");
+      var pathGoalDeleteBtn = event.target.closest(".path-goal-delete");
+      var pathTaskDeleteBtn = event.target.closest(".path-task-delete");
+      var pathArtifactDeleteBtn = event.target.closest(".path-artifact-delete");
       var adminTicketDetailBtn = event.target.closest(".admin-ticket-detail");
       var adminTicketReplyBtn = event.target.closest(".admin-ticket-reply");
       var adminSubApproveBtn = event.target.closest(".admin-sub-approve");
       var adminSubRejectBtn = event.target.closest(".admin-sub-reject");
+      var workspaceDetailBtn = event.target.closest(".ind-workspace-detail");
+      var savedApplyBtn = event.target.closest(".ind-saved-apply");
+      var unsaveBtn = event.target.closest(".ind-unsave");
+      var savedDetailBtn = event.target.closest(".ind-saved-detail");
+      var resourceDetailBtn = event.target.closest(".ind-resource-detail");
 
       if (applyBtn) {
         api("/api/industry/student/opportunities/" + Number(applyBtn.dataset.id) + "/apply", { method: "POST", body: { userId: ensureUser() } })
-          .then(function () { toast("Application submitted", "ok"); loadIndustryApplications().catch(onError); })
+          .then(function () { toast("درخواست ارسال شد", "ok"); loadIndustryApplications().catch(onError); })
           .catch(onError);
       }
 
       if (saveBtn) {
         api("/api/industry/student/opportunities/" + Number(saveBtn.dataset.id) + "/save", { method: "POST", body: { userId: ensureUser() } })
-          .then(function () { toast("Opportunity saved", "ok"); })
+          .then(function () { toast("فرصتی ذخیره شد", "ok"); })
           .catch(onError);
       }
 
       if (startBtn) {
         api("/api/industry/student/projects/" + Number(startBtn.dataset.id) + "/start", { method: "POST", body: { userId: ensureUser() } })
-          .then(function () { toast("Project started", "ok"); loadIndustryWorkspace().catch(onError); })
+          .then(function () { toast("پروژه شروع شد", "ok"); loadIndustryWorkspace().catch(onError); })
           .catch(onError);
       }
 
       if (progressBtn) {
-        var nextProgress = Number(window.prompt("Enter progress (0-100):", "30"));
+        var nextProgress = Number(window.prompt("راه رفته را وارد کنید (0-100):", "30"));
         if (!Number.isFinite(nextProgress)) return;
         nextProgress = Math.max(0, Math.min(100, Math.floor(nextProgress)));
         api("/api/industry/student/student-projects/" + Number(progressBtn.dataset.id), {
           method: "PATCH",
           body: { progress: nextProgress, status: nextProgress >= 100 ? "completed" : "in_progress" }
-        }).then(function () { toast("Progress saved", "ok"); loadIndustryWorkspace().catch(onError); }).catch(onError);
+        }).then(function () { toast("پیشرفت ذخیره شد", "ok"); loadIndustryWorkspace().catch(onError); }).catch(onError);
       }
 
       if (linkBtn) {
-        var link = window.prompt("Enter output URL:", "");
+        var link = window.prompt("آدرس خروجی:", "");
         if (!link) return;
         api("/api/industry/student/student-projects/" + Number(linkBtn.dataset.id), { method: "PATCH", body: { outputLinks: [link] } })
-          .then(function () { toast("Output link added", "ok"); loadIndustryWorkspace().catch(onError); })
+          .then(function () { toast("لینک افزوده شد", "ok"); loadIndustryWorkspace().catch(onError); })
           .catch(onError);
       }
 
       if (supportDetailBtn) showSupportDetail(Number(supportDetailBtn.dataset.id)).catch(onError);
+      if (supportCloseBtn) closeSupportTicket(Number(supportCloseBtn.dataset.id)).catch(onError);
 
       if (pathTaskStatusBtn) {
         api("/api/miniapp/my-path/tasks/" + Number(pathTaskStatusBtn.dataset.id), {
           method: "PATCH",
           body: { userId: ensureUser(), status: pathTaskStatusBtn.dataset.status }
-        }).then(function () { toast("Task status updated", "ok"); loadPath().catch(onError); }).catch(onError);
+        }).then(function () { toast("تسک به روز شد", "ok"); loadPath().catch(onError); }).catch(onError);
       }
+
+      if (pathGoalDetailBtn) showPathGoalDetail(Number(pathGoalDetailBtn.dataset.id)).catch(onError);
+      if (pathGoalDeleteBtn) deletePathGoal(Number(pathGoalDeleteBtn.dataset.id)).catch(onError);
+      if (pathTaskDeleteBtn) deletePathTask(Number(pathTaskDeleteBtn.dataset.id)).catch(onError);
+      if (pathArtifactDeleteBtn) deletePathArtifact(Number(pathArtifactDeleteBtn.dataset.id)).catch(onError);
 
       if (adminTicketDetailBtn) {
         adminTicketDetail(Number(adminTicketDetailBtn.dataset.id)).catch(onError);
@@ -816,63 +1141,162 @@
       if (adminSubRejectBtn) {
         adminReviewSubmission(Number(adminSubRejectBtn.dataset.id), "reject").catch(onError);
       }
+
+      if (workspaceDetailBtn) {
+        showWorkspaceDetail(Number(workspaceDetailBtn.dataset.id)).catch(onError);
+      }
+
+      if (savedApplyBtn) {
+        api("/api/industry/student/opportunities/" + Number(savedApplyBtn.dataset.id) + "/apply", { method: "POST", body: { userId: ensureUser() } })
+          .then(function () { toast("درخواست ارسال شد", "ok"); loadIndustryApplications().catch(onError); })
+          .catch(onError);
+      }
+
+      if (unsaveBtn) {
+        api("/api/industry/student/saved-opportunities/" + Number(unsaveBtn.dataset.id), { method: "DELETE", body: { userId: ensureUser() } })
+          .then(function () { toast("فرصت حذف شد", "ok"); loadIndustrySavedOpportunities().catch(onError); })
+          .catch(onError);
+      }
+
+      if (savedDetailBtn) {
+        var item = state.industry.savedOpportunities.find(function (i) { return i.id === Number(savedDetailBtn.dataset.id); });
+        if (item) {
+          window.alert("عنوان: " + item.title + "\nشرکت: " + item.company_name + "\nسطح: " + item.level + "\nمطابقت: " + item.matchScore);
+        }
+      }
+
+      if (resourceDetailBtn) {
+        var res = state.industry.resources.find(function (r) { return r.id === Number(resourceDetailBtn.dataset.id); });
+        if (res) {
+          window.alert("عنوان: " + res.title + "\nدسته‌بندی: " + res.category + "\nتوضیح: " + res.description);
+        }
+      }
     });
   }
 
   function buildForms() {
+    el("industryProfileForm").innerHTML = "";
+
     el("pathGoalForm").innerHTML = [
-      "<select id='goalType'><option value='academic'>academic</option><option value='career'>career</option><option value='project'>project</option><option value='application'>application</option></select>",
-      "<input id='goalTitle' placeholder='Goal title' />",
-      "<button id='goalAddBtn' class='btn' type='button'>Add goal</button>"
+      "<select id='goalType'><option value='academic'>تحصیلی</option><option value='career'>شغلی</option><option value='project'>پروژه</option><option value='application'>درخواست</option></select>",
+      "<input id='goalTitle' placeholder='عنوان هدف' />",
+      "<input id='goalDeadline' type='date' />",
+      "<textarea id='goalDescription' placeholder='توضیح (اختیاری)' style='min-height: 60px;'></textarea>",
+      "<button id='goalAddBtn' class='btn' type='button'>افزودن هدف</button>"
     ].join("");
 
     el("pathTaskForm").innerHTML = [
-      "<select id='taskType'><option value='study'>study</option><option value='practice'>practice</option><option value='project'>project</option><option value='apply'>apply</option><option value='interview'>interview</option></select>",
-      "<input id='taskTitle' placeholder='Task title' />",
-      "<input id='taskGoalId' placeholder='goalId (optional)' />",
-      "<button id='taskAddBtn' class='btn' type='button'>Add task</button>"
+      "<select id='taskType'><option value='study'>مطالعه</option><option value='practice'>تمرین</option><option value='project'>پروژه</option><option value='apply'>درخواست</option><option value='interview'>مصاحبه</option></select>",
+      "<input id='taskTitle' placeholder='عنوان تسك' />",
+      "<input id='taskDueDate' type='date' />",
+      "<input id='taskGoalId' placeholder='شناسه هدف (اختیاری)' />",
+      "<button id='taskAddBtn' class='btn' type='button'>افزودن تسك</button>"
     ].join("");
 
     el("pathArtifactForm").innerHTML = [
-      "<select id='artifactType'><option value='github'>github</option><option value='demo'>demo</option><option value='file'>file</option><option value='certificate'>certificate</option><option value='resume_bullet'>resume_bullet</option></select>",
-      "<input id='artifactTitle' placeholder='Artifact title' />",
+      "<select id='artifactType'><option value='github'>GitHub</option><option value='demo'>نمایش</option><option value='file'>فایل</option><option value='certificate'>مدرک</option><option value='resume_bullet'>رزومه</option></select>",
+      "<input id='artifactTitle' placeholder='عنوان مورد' />",
       "<input id='artifactUrl' placeholder='https://...' />",
-      "<button id='artifactAddBtn' class='btn' type='button'>Add artifact</button>"
+      "<button id='artifactAddBtn' class='btn' type='button'>افزودن مورد</button>"
     ].join("");
 
     el("supportCreateForm").innerHTML = [
-      field("Ticket subject", "supportSubject", "", "text"),
-      "<div class='form-row'><label for='supportPriority'>Priority</label><select id='supportPriority'><option value='normal'>normal</option><option value='high'>high</option><option value='urgent'>urgent</option><option value='low'>low</option></select></div>",
-      "<div class='form-row'><label for='supportMessage'>Message</label><textarea id='supportMessage'></textarea></div>",
-      "<button id='supportCreateBtn' class='btn' type='button'>Create ticket</button>"
+      field("موضوع تیکت", "supportSubject", "", "text"),
+      "<div class='form-row'><label for='supportPriority' style='text-align: right;'>اولویت</label><select id='supportPriority'><option value='low'>نمل</option><option value='normal'>عام</option><option value='high'>بالا</option><option value='urgent'>فوری</option></select></div>",
+      "<div class='form-row'><label for='supportMessage' style='text-align: right;'>پیام</label><textarea id='supportMessage' style='direction: rtl; text-align: right; min-height: 80px;'></textarea></div>",
+      "<button id='supportCreateBtn' class='btn' type='button'>ثبت تیکت</button>"
     ].join("");
 
     el("submissionForm").innerHTML = [
-      "<div class='form-row'><label for='subKind'>Content kind</label><select id='subKind'><option value='note'>note</option><option value='book'>book</option><option value='resource'>resource</option><option value='video'>video</option><option value='summary'>summary</option><option value='sample-question'>sample question</option><option value='exam-tip'>exam tip</option><option value='course'>course</option><option value='professor'>professor</option></select></div>",
-      field("Course name", "subCourseName", ""),
-      field("Professor name", "subProfessorName", ""),
-      field("Title", "subTitle", ""),
-      field("Purpose", "subPurpose", ""),
-      field("Tags", "subTags", ""),
-      "<div class='form-row'><label for='subFile'>PDF file (optional)</label><input id='subFile' type='file' accept='application/pdf' /></div>",
-      "<button id='submissionSendBtn' class='btn' type='button'>Submit for review</button>"
+      "<div class='form-row'><label for='subKind' style='text-align: right;'>نوع محتوا</label><select id='subKind'><option value='note'>جزوه</option><option value='book'>کتاب</option><option value='resource'>منبع</option><option value='video'>ویدیو</option><option value='summary'>خلاصه</option><option value='sample-question'>نمونه پرسش</option><option value='exam-tip'>راهنمایی امتحان</option><option value='course'>درس</option><option value='professor'>استاد</option></select></div>",
+      field("نام درس", "subCourseName", ""),
+      field("نام استاد", "subProfessorName", ""),
+      field("عنوان", "subTitle", ""),
+      field("مقصد", "subPurpose", ""),
+      field("برچسب‌ها", "subTags", ""),
+      "<div class='form-row'><label for='subFile' style='text-align: right;'>فایل PDF (اختیاری)</label><input id='subFile' type='file' accept='application/pdf' /></div>",
+      "<button id='submissionSendBtn' class='btn' type='button'>ارسال برای بررسی</button>"
+    ].join("");
+
+    el("supportStatusFilter").innerHTML = [
+      "<option value=''>همه</option>",
+      "<option value='open'>باز</option>",
+      "<option value='pending'>در انتظار</option>",
+      "<option value='answered'>پاسخ داده شده</option>",
+      "<option value='closed'>بسته</option>"
+    ].join("");
+
+    el("resCategory").innerHTML = [
+      "<option value=''>همه</option>",
+      "<option value='tutorial'>آموزش</option>",
+      "<option value='tool'>ابزار</option>",
+      "<option value='library'>کتابخانه</option>",
+      "<option value='course'>دوره</option>",
+      "<option value='article'>مقاله</option>"
     ].join("");
 
     el("goalAddBtn").addEventListener("click", function () {
-      api("/api/miniapp/my-path/goals", { method: "POST", body: { userId: ensureUser(), type: el("goalType").value, title: el("goalTitle").value } })
-        .then(function () { toast("Goal added", "ok"); el("goalTitle").value = ""; loadPath().catch(onError); })
+      var userId = ensureUser();
+      var deadline = el("goalDeadline").value || null;
+      api("/api/miniapp/my-path/goals", {
+        method: "POST",
+        body: {
+          userId: userId,
+          type: el("goalType").value,
+          title: el("goalTitle").value,
+          deadline: deadline,
+          description: el("goalDescription").value || null
+        }
+      })
+        .then(function () {
+          toast("هدف افزوده شد", "ok");
+          el("goalTitle").value = "";
+          el("goalDeadline").value = "";
+          el("goalDescription").value = "";
+          loadPath().catch(onError);
+        })
         .catch(onError);
     });
 
     el("taskAddBtn").addEventListener("click", function () {
-      api("/api/miniapp/my-path/tasks", { method: "POST", body: { userId: ensureUser(), type: el("taskType").value, title: el("taskTitle").value, goalId: el("taskGoalId").value || null } })
-        .then(function () { toast("Task added", "ok"); el("taskTitle").value = ""; loadPath().catch(onError); })
+      var userId = ensureUser();
+      var dueDate = el("taskDueDate").value || null;
+      api("/api/miniapp/my-path/tasks", {
+        method: "POST",
+        body: {
+          userId: userId,
+          type: el("taskType").value,
+          title: el("taskTitle").value,
+          dueDate: dueDate,
+          goalId: el("taskGoalId").value || null
+        }
+      })
+        .then(function () {
+          toast("تسك افزوده شد", "ok");
+          el("taskTitle").value = "";
+          el("taskDueDate").value = "";
+          el("taskGoalId").value = "";
+          loadPath().catch(onError);
+        })
         .catch(onError);
     });
 
     el("artifactAddBtn").addEventListener("click", function () {
-      api("/api/miniapp/my-path/artifacts", { method: "POST", body: { userId: ensureUser(), type: el("artifactType").value, title: el("artifactTitle").value, url: el("artifactUrl").value || null } })
-        .then(function () { toast("Artifact added", "ok"); el("artifactTitle").value = ""; el("artifactUrl").value = ""; loadPath().catch(onError); })
+      api("/api/miniapp/my-path/artifacts", {
+        method: "POST",
+        body: {
+          userId: ensureUser(),
+          type: el("artifactType").value,
+          title: el("artifactTitle").value,
+          url: el("artifactUrl").value || null
+        }
+      })
+        .then(function () {
+          toast("مورد افزوده شد", "ok");
+          el("artifactTitle").value = "";
+          el("artifactUrl").value = "";
+          loadPath().catch(onError);
+        })
         .catch(onError);
     });
 
@@ -885,12 +1309,14 @@
           priority: el("supportPriority").value,
           message: el("supportMessage").value
         }
-      }).then(function () {
-        toast("Ticket created", "ok");
-        el("supportSubject").value = "";
-        el("supportMessage").value = "";
-        loadSupportTickets().catch(onError);
-      }).catch(onError);
+      })
+        .then(function () {
+          toast("تیکت ایجاد شد", "ok");
+          el("supportSubject").value = "";
+          el("supportMessage").value = "";
+          loadSupportTickets().catch(onError);
+        })
+        .catch(onError);
     });
 
     el("supportLoadBtn").addEventListener("click", function () { loadSupportTickets().catch(onError); });
@@ -909,7 +1335,7 @@
 
       api("/api/miniapp/submissions/university", { method: "POST", body: form })
         .then(function () {
-          toast("Submission added to moderation queue", "ok");
+          toast("آپلود برای بررسی ارسال شد", "ok");
           el("subTitle").value = "";
           el("subPurpose").value = "";
           el("subTags").value = "";
@@ -940,7 +1366,7 @@
       String((tgUser || {}).username || "").toLowerCase() === "immohammadf"
     );
 
-    if (!tgUser || !tgUser.id) throw new Error("Open this mini app from Telegram.");
+    if (!tgUser || !tgUser.id) throw new Error("این مینی اپلیکاشن را از تلهگرام باز کنید.");
 
     var session = await api("/api/miniapp/session", {
       method: "POST",
@@ -955,7 +1381,7 @@
     state.user = session.user || null;
     state.profile = session.profile || null;
     el("miniUserLabel").textContent =
-      "@" + toText(tgUser.username || "-") + " | user #" + Number((state.user || {}).id || 0).toLocaleString();
+      "@" + toText(tgUser.username || "-") + " | کاربر #" + Number((state.user || {}).id || 0).toLocaleString();
   }
 
   async function boot() {
@@ -966,10 +1392,10 @@
       buildProfileForm();
       bindStaticActions();
       setTab("dashboard");
-      toast("Mini app is ready", "ok");
+      toast("مینی اپلیکیشن آماده است", "ok");
     } catch (error) {
       onError(error);
-      el("miniUserLabel").textContent = error.message || "Mini app failed";
+      el("miniUserLabel").textContent = error.message || "مینی اپلیکیشن ناموفق بود";
     }
   }
 

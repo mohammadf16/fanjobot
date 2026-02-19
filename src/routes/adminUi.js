@@ -127,12 +127,12 @@ function renderPage({ title, heading, subtitle, activeNav, content, scriptName, 
 
 function renderMiniAppPage() {
   return `<!doctype html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
-  <title>Fanjobo Mini App</title>
+  <title>اپلیکیشن کوچک فنجوبو</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="/admin/assets/miniapp.css?v=${assetVersion}" />
 </head>
@@ -140,11 +140,11 @@ function renderMiniAppPage() {
   <div class="mini-shell">
     <header class="mini-top glass">
       <div>
-        <h1>Fanjobo Mini App</h1>
-        <p id="miniUserLabel">Connecting to your account...</p>
+        <h1>اپلیکیشن کوچک فنجوبو</h1>
+        <p id="miniUserLabel">درحال اتصال به حساب شما...</p>
       </div>
       <div class="mini-actions">
-        <button id="miniRefreshAllBtn" class="btn">Refresh</button>
+        <button id="miniRefreshAllBtn" class="btn">تازه‌سازی</button>
       </div>
     </header>
 
@@ -152,147 +152,180 @@ function renderMiniAppPage() {
 
     <main>
       <section id="tab-dashboard" class="mini-tab glass active">
-        <h2>Dashboard</h2>
+        <h2>داشبورد</h2>
         <div id="dashCards" class="cards-grid"></div>
         <div class="mini-grid-2">
           <article class="glass">
-            <h3>Recent Events</h3>
+            <h3>بوقیات اخیر</h3>
             <div id="dashEvents" class="list"></div>
           </article>
           <article class="glass">
-            <h3>Profile Snapshot</h3>
+            <h3>لقطه پروفایل</h3>
             <div id="dashProfile" class="kv"></div>
           </article>
         </div>
       </section>
 
       <section id="tab-profile" class="mini-tab glass">
-        <h2>Profile</h2>
+        <h2>پروفایل</h2>
         <form id="profileForm" class="form-grid"></form>
       </section>
 
       <section id="tab-university" class="mini-tab glass">
-        <h2>University</h2>
+        <h2>دانشگاه</h2>
         <div class="toolbar">
           <select id="uniKindFilter"></select>
-          <input id="uniSearchInput" placeholder="Search by title or description" />
-          <button id="uniLoadBtn" class="btn">Load</button>
+          <input id="uniSearchInput" placeholder="جستجو..." />
+          <button id="uniLoadBtn" class="btn">بارگذاری</button>
         </div>
         <div id="uniList" class="list"></div>
         <div class="pager">
-          <button id="uniPrevBtn" class="btn ghost">Prev</button>
-          <span id="uniPageLabel">Page 1</span>
-          <button id="uniNextBtn" class="btn ghost">Next</button>
+          <button id="uniPrevBtn" class="btn ghost">قبلی</button>
+          <span id="uniPageLabel">صفحه 1</span>
+          <button id="uniNextBtn" class="btn ghost">بعدی</button>
         </div>
       </section>
 
       <section id="tab-industry" class="mini-tab glass">
-        <h2>Industry</h2>
+        <h2>صنعت</h2>
+        <article>
+          <h3>پروفایل صنعتی</h3>
+          <form id="industryProfileForm" class="form-grid"></form>
+        </article>
         <div class="mini-grid-2">
           <article>
-            <h3>Opportunities</h3>
+            <h3>فرصت‌ها</h3>
             <div class="toolbar">
               <select id="indTypeFilter">
-                <option value="">All types</option>
-                <option value="internship">Internship</option>
-                <option value="job">Job</option>
-                <option value="project-based">Project based</option>
-                <option value="part-time">Part time</option>
+                <option value="">همه انواع</option>
+                <option value="internship">کارآموزی</option>
+                <option value="job">شغل دائم</option>
+                <option value="project-based">پروژه مبنا</option>
+                <option value="part-time">تمام وقت</option>
               </select>
-              <button id="indLoadOppBtn" class="btn">Load Opportunities</button>
+              <button id="indLoadOppBtn" class="btn">بارگذاری فرصت‌ها</button>
             </div>
             <div id="indOppList" class="list"></div>
           </article>
           <article>
-            <h3>Projects & Workspace</h3>
+            <h3>فرصت‌های ذخیره شده</h3>
             <div class="toolbar">
-              <button id="indLoadProjectsBtn" class="btn">Open Projects</button>
-              <button id="indLoadWorkspaceBtn" class="btn ghost">My Workspace</button>
+              <button id="indLoadSavedBtn" class="btn">بارگذاری ذخیره‌شده‌ها</button>
+            </div>
+            <div id="indSavedOppList" class="list"></div>
+          </article>
+        </div>
+        <div class="mini-grid-2">
+          <article>
+            <h3>پروژه‌های باز</h3>
+            <div class="toolbar">
+              <button id="indLoadProjectsBtn" class="btn">بارگذاری پروژه‌ها</button>
             </div>
             <div id="indProjectList" class="list"></div>
           </article>
+          <article>
+            <h3>فضای کاری من</h3>
+            <div class="toolbar">
+              <button id="indLoadWorkspaceBtn" class="btn">بارگذاری فضای کاری</button>
+            </div>
+            <div id="indWorkspaceList" class="list"></div>
+          </article>
         </div>
         <article>
-          <h3>My Applications</h3>
+          <h3>منابع</h3>
+          <div class="toolbar">
+            <select id="resCategory"></select>
+            <button id="indLoadResourcesBtn" class="btn">بارگذاری منابع</button>
+          </div>
+          <div id="indResourceList" class="list"></div>
+          <div class="pager">
+            <button id="resPrevBtn" class="btn ghost">قبلی</button>
+            <span id="resPageLabel">صفحه 1</span>
+            <button id="resNextBtn" class="btn ghost">بعدی</button>
+          </div>
+        </article>
+        <article>
+          <h3>درخواست‌های من</h3>
           <div id="indApplications" class="list"></div>
         </article>
       </section>
 
       <section id="tab-path" class="mini-tab glass">
-        <h2>My Path</h2>
+        <h2>مسیر من</h2>
         <div id="pathSummary" class="cards-grid"></div>
         <div class="mini-grid-2">
           <article>
-            <h3>Goals</h3>
+            <h3>هدف‌ها</h3>
             <form id="pathGoalForm" class="toolbar wrap"></form>
             <div id="pathGoals" class="list"></div>
           </article>
           <article>
-            <h3>Tasks</h3>
+            <h3>تسک‌ها</h3>
             <form id="pathTaskForm" class="toolbar wrap"></form>
             <div id="pathTasks" class="list"></div>
           </article>
         </div>
         <article>
-          <h3>Artifacts</h3>
+          <h3>موارد</h3>
           <form id="pathArtifactForm" class="toolbar wrap"></form>
           <div id="pathArtifacts" class="list"></div>
         </article>
       </section>
 
       <section id="tab-support" class="mini-tab glass">
-        <h2>Support</h2>
+        <h2>پشتیبانی</h2>
         <form id="supportCreateForm" class="form-grid"></form>
         <div class="toolbar">
-          <button id="supportLoadBtn" class="btn">Load My Tickets</button>
+          <select id="supportStatusFilter"></select>
+          <button id="supportLoadBtn" class="btn">بارگذاری تیکت‌های من</button>
         </div>
         <div id="supportList" class="list"></div>
       </section>
 
       <section id="tab-submissions" class="mini-tab glass">
-        <h2>Submissions</h2>
+        <h2>آپلودها</h2>
         <form id="submissionForm" class="form-grid" enctype="multipart/form-data"></form>
         <div class="toolbar">
-          <button id="submissionLoadBtn" class="btn ghost">Load My Submissions</button>
+          <button id="submissionLoadBtn" class="btn ghost">بارگذاری آپلودهای من</button>
         </div>
         <div id="submissionList" class="list"></div>
       </section>
 
       <section id="tab-admin" class="mini-tab glass">
-        <h2>Admin</h2>
+        <h2>ادمین</h2>
         <div id="adminOverviewCards" class="cards-grid"></div>
         <div class="mini-grid-2">
           <article>
-            <h3>Support Queue</h3>
+            <h3>صف پشتیبانی</h3>
             <div class="toolbar">
-              <button id="adminLoadSupportBtn" class="btn">Load Tickets</button>
+              <button id="adminLoadSupportBtn" class="btn">بارگذاری تیکت‌ها</button>
             </div>
             <div id="adminSupportList" class="list"></div>
           </article>
           <article>
-            <h3>Moderation Queue</h3>
+            <h3>صف نظارت</h3>
             <div class="toolbar">
-              <button id="adminLoadSubmissionsBtn" class="btn">Load Submissions</button>
+              <button id="adminLoadSubmissionsBtn" class="btn">بارگذاری آپلودها</button>
             </div>
             <div id="adminSubmissionList" class="list"></div>
           </article>
         </div>
         <article>
-          <h3>Broadcast</h3>
+          <h3>پخش اطلاعات</h3>
           <div class="toolbar wrap">
-            <input id="adminBroadcastLimit" type="number" min="1" max="10000" placeholder="Limit (optional)" />
-            <label class="pill"><input id="adminBroadcastDryRun" type="checkbox" /> Dry run</label>
+            <input id="adminBroadcastLimit" type="number" min="1" max="10000" placeholder="حد نهایی (اختیاری)" />
+            <label class="pill"><input id="adminBroadcastDryRun" type="checkbox" /> اجرای آزمایشی</label>
           </div>
-          <textarea id="adminBroadcastMessage" placeholder="Write broadcast message..."></textarea>
+          <textarea id="adminBroadcastMessage" placeholder="پیام پخش را بنویسید..."></textarea>
           <div class="toolbar">
-            <button id="adminBroadcastBtn" class="btn">Send Broadcast</button>
-            <button id="adminLoadOverviewBtn" class="btn ghost">Refresh Admin Data</button>
+            <button id="adminBroadcastBtn" class="btn">ارسال پخش</button>
+            <button id="adminLoadOverviewBtn" class="btn ghost">تازه‌سازی اطلاعات ادمین</button>
           </div>
         </article>
         <div class="toolbar">
-          <a href="/admin/dashboard" target="_blank" class="btn ghost">Open Full Admin Panel</a>
+          <a href="/admin/dashboard" target="_blank" class="btn ghost">باز کردن پنل کامل ادمین</a>
         </div>
-        <p class="muted">This tab is active only for configured admin accounts.</p>
+        <p class="muted">این برگه تنها برای حسابهای ادمینی تنظیم‌شده فعال است.</p>
       </section>
     </main>
   </div>
