@@ -115,6 +115,210 @@ function renderPage({ title, heading, subtitle, activeNav, content, scriptName }
 </html>`;
 }
 
+function renderMiniAppPage() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Fanjobo Mini App</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: #111a2e;
+      --line: #27324b;
+      --text: #e5ecff;
+      --muted: #9fb0d8;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --btn: #2563eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background: radial-gradient(1200px 700px at 15% 0%, #1e2b49 0%, var(--bg) 55%);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+    .wrap {
+      width: min(760px, 100%);
+      display: grid;
+      gap: 14px;
+    }
+    .card {
+      background: rgba(17, 26, 46, 0.85);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      backdrop-filter: blur(8px);
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      letter-spacing: 0.2px;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      background: #0f172a;
+    }
+    .pill.ok { color: var(--ok); border-color: rgba(34, 197, 94, 0.35); }
+    .pill.warn { color: var(--warn); border-color: rgba(245, 158, 11, 0.35); }
+    .kv {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    .k { color: var(--muted); }
+    .v {
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    button {
+      background: var(--btn);
+      color: #fff;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--text);
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0f172a;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      color: #cbd8ff;
+      min-height: 72px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>Fanjobo Telegram Mini App</h1>
+      <p>The route is active now. You can use this URL in BotFather for Web App / Mini App.</p>
+      <div class="row">
+        <span id="tgState" class="pill warn">Telegram context: unknown</span>
+        <span id="apiState" class="pill">API health: checking...</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="kv"><div class="k">telegram_user_id</div><div id="uId" class="v">-</div></div>
+      <div class="kv"><div class="k">username</div><div id="uName" class="v">-</div></div>
+      <div class="kv"><div class="k">first_name</div><div id="uFirst" class="v">-</div></div>
+      <div class="kv"><div class="k">platform</div><div id="platform" class="v">-</div></div>
+      <div class="kv"><div class="k">theme</div><div id="theme" class="v">-</div></div>
+      <div class="actions">
+        <button id="expandBtn" type="button">Expand</button>
+        <button id="closeBtn" class="ghost" type="button">Close Mini App</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <pre id="logBox">Mini app booting...</pre>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      var el = function (id) { return document.getElementById(id); };
+      var logBox = el("logBox");
+
+      function log(text) {
+        logBox.textContent = String(text || "");
+      }
+
+      function setApiState(ok) {
+        var node = el("apiState");
+        if (ok) {
+          node.className = "pill ok";
+          node.textContent = "API health: OK";
+        } else {
+          node.className = "pill warn";
+          node.textContent = "API health: failed";
+        }
+      }
+
+      fetch("/health", { method: "GET" })
+        .then(function (res) { return setApiState(res.ok); })
+        .catch(function () { return setApiState(false); });
+
+      var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+      if (!tg) {
+        el("tgState").className = "pill warn";
+        el("tgState").textContent = "Telegram context: browser mode";
+        log("Loaded outside Telegram. Open from Telegram Web App button.");
+        return;
+      }
+
+      tg.ready();
+      tg.expand();
+
+      el("tgState").className = "pill ok";
+      el("tgState").textContent = "Telegram context: active";
+
+      var user = (tg.initDataUnsafe && tg.initDataUnsafe.user) || {};
+      el("uId").textContent = user.id || "-";
+      el("uName").textContent = user.username ? "@" + user.username : "-";
+      el("uFirst").textContent = user.first_name || "-";
+      el("platform").textContent = tg.platform || "-";
+      el("theme").textContent = tg.colorScheme || "-";
+
+      el("expandBtn").addEventListener("click", function () {
+        try { tg.expand(); } catch (_e) {}
+      });
+      el("closeBtn").addEventListener("click", function () {
+        try { tg.close(); } catch (_e) {}
+      });
+
+      log("Mini app is ready.");
+    })();
+  </script>
+</body>
+</html>`;
+}
+
 const dashboardContent = `
 <section class="card dashboard-hero">
   <div class="section-head">
@@ -588,6 +792,14 @@ router.use(
 
 router.get("/admin", (_req, res) => {
   res.redirect(302, "/admin/dashboard");
+});
+
+router.get("/miniapp", (_req, res) => {
+  res.type("html").send(renderMiniAppPage());
+});
+
+router.get("/miniapp/", (_req, res) => {
+  res.redirect(302, "/miniapp");
 });
 
 router.get("/admin/dashboard", (_req, res) => {
