@@ -456,7 +456,37 @@ async function showUniversityKind(ctx, kind, title) {
 }
 
 function getSubmissionKindByLabel(label) {
-  return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.label === label) || null;
+  const raw = normalizePickedOption(String(label || "").trim());
+  if (!raw) return null;
+
+  const stripLeadingDecorators = (value) =>
+    String(value || "")
+      .replace(/^[^\u0600-\u06FFA-Za-z0-9]+/, "")
+      .trim();
+
+  const candidates = new Set([
+    raw,
+    normalizeMenuText(raw),
+    stripLeadingDecorators(raw),
+    stripLeadingDecorators(normalizeMenuText(raw))
+  ]);
+
+  for (const item of UNIVERSITY_SUBMISSION_KINDS) {
+    const itemCandidates = new Set([
+      item.label,
+      normalizeMenuText(item.label),
+      stripLeadingDecorators(item.label),
+      stripLeadingDecorators(normalizeMenuText(item.label))
+    ]);
+
+    for (const candidate of candidates) {
+      if (itemCandidates.has(candidate)) {
+        return item;
+      }
+    }
+  }
+
+  return null;
 }
 
 function submissionKindKeyboard() {
@@ -553,7 +583,7 @@ function parseSubmissionStepValue(step, text) {
   }
 
   if (step.key === "fileUpload") {
-    return { ok: false, message: "در این مرحله فایل را ارسال کن (به صورت document/photo)." };
+    return { ok: false, message: "در این مرحله فایل PDF را به صورت document ارسال کن." };
   }
 
   if (step.key === "tags") {
