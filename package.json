@@ -1,0 +1,33 @@
+{
+  "name": "fanjobo",
+  "version": "1.0.0",
+  "description": "Fanjoo MVP backend + Telegram bot for university/industry matching",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:init": "node scripts/initDb.js"
+  },
+  "keywords": [
+    "railway",
+    "telegram-bot",
+    "google-drive",
+    "recommendation-engine"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "file-uri-to-path": "^2.0.0",
+    "googleapis": "^171.4.0",
+    "multer": "^2.0.2",
+    "pg": "^8.18.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "telegraf": "^4.16.3",
+    "zod": "^4.3.6"
+  }
+}
