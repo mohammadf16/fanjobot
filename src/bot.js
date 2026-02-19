@@ -1337,17 +1337,25 @@ async function askSupportTicketStep(ctx, session) {
 }
 
 async function startSupportTicketWizard(ctx) {
-  const userId = await ensureUser(ctx);
-  await ensureSupportTables();
+  try {
+    const userId = await ensureUser(ctx);
+    await ensureSupportTables();
 
-  supportTicketSessions.set(getSessionKey(ctx), {
-    userId,
-    stepIndex: 0,
-    subject: null
-  });
+    supportTicketSessions.set(getSessionKey(ctx), {
+      userId,
+      stepIndex: 0,
+      subject: null
+    });
 
-  await ctx.reply("فرم پشتیبانی شروع شد. هر زمان خواستی «لغو» بزن.");
-  await askSupportTicketStep(ctx, supportTicketSessions.get(getSessionKey(ctx)));
+    await ctx.reply("فرم پشتیبانی شروع شد. هر زمان خواستی «لغو» بزن.");
+    await askSupportTicketStep(ctx, supportTicketSessions.get(getSessionKey(ctx)));
+  } catch (error) {
+    logError("Support wizard start failed", {
+      error: error?.message || String(error),
+      telegramId: String(ctx.from?.id || "")
+    });
+    await ctx.reply("سرویس پشتیبانی موقتاً در دسترس نیست. کمی بعد دوباره تلاش کن.", mainMenu());
+  }
 }
 
 async function saveSupportTicketFromBot(session, messageText) {
@@ -3322,7 +3330,9 @@ const menuLabelAliases = new Map([
   ["خروج از مسیر من", MY_PATH_MENU_BACK],
   ["بازگشت به منوی اصلی", UNI_MENU_BACK],
   ["لغو ارسال محتوا", UNIVERSITY_SUBMISSION_BACK],
-  ["ثبت نهایی ارسال", UNIVERSITY_SUBMISSION_DONE]
+  ["ثبت نهایی ارسال", UNIVERSITY_SUBMISSION_DONE],
+  ["🎫 پشتیبانی", "پشتیبانی"],
+  ["پشتیبانی", "🎫 پشتیبانی"]
 ]);
 
 function normalizeMenuText(text) {
@@ -3801,7 +3811,7 @@ function registerHandlers(bot) {
     await showIndustryLearningLibraryModule(ctx);
   });
 
-  bot.hears("پشتیبانی", async (ctx) => {
+  bot.hears(/^پشتیبانی$/i, async (ctx) => {
     await startSupportTicketWizard(ctx);
   });
 
