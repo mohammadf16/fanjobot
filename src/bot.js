@@ -19,6 +19,7 @@ const profileSessions = new Map();
 const submissionSessions = new Map();
 const pathSessions = new Map();
 const supportTicketSessions = new Map();
+const supportActionSessions = new Map();
 const bookDownloadLocks = new Map();
 
 const BOOK_CACHE_DIR = path.join(process.cwd(), "tmp", "telegram-book-cache");
@@ -42,6 +43,12 @@ const ADMIN_MENU_TICKETS = "🎫 تیکت های باز";
 const ADMIN_MENU_NOTIFS = "📬 نوتیف های باز";
 const ADMIN_MENU_STARTED = "👥 کاربران استارت کرده";
 const ADMIN_MENU_HELP = "🧾 راهنمای ادمین";
+const SUPPORT_MENU_NEW = "📝 ثبت تیکت جدید";
+const SUPPORT_MENU_MY = "📂 تیکت های من";
+const SUPPORT_MENU_DETAIL = "🔎 مشاهده تیکت با شماره";
+const SUPPORT_MENU_REPLY = "✉️ پاسخ به تیکت";
+const SUPPORT_MENU_HELP = "🧾 راهنمای تیکت";
+const SUPPORT_MENU_BACK = "🔙 بازگشت از پشتیبانی";
 const STATIC_ADMIN_TELEGRAM_IDS = new Set(["565136808"]);
 const STATIC_ADMIN_USERNAMES = new Set(["immohammadf"]);
 
@@ -267,6 +274,21 @@ function adminPanelMenu() {
     [ADMIN_MENU_HELP],
     [ADMIN_MENU_BACK]
   ]).resize();
+}
+
+function supportMenu(ctx) {
+  const rows = [
+    [SUPPORT_MENU_NEW, SUPPORT_MENU_MY],
+    [SUPPORT_MENU_DETAIL, SUPPORT_MENU_REPLY],
+    [SUPPORT_MENU_HELP],
+    [SUPPORT_MENU_BACK]
+  ];
+
+  if (isBotAdminContext(ctx)) {
+    rows.splice(3, 0, [LABEL_ADMIN_PANEL]);
+  }
+
+  return Markup.keyboard(rows).resize();
 }
 
 function buildWebhookPath() {
@@ -1384,6 +1406,232 @@ async function startSupportTicketWizard(ctx) {
   }
 }
 
+async function showSupportTicketPanel(ctx) {
+  await ctx.reply(
+    "پنل پشتیبانی فعال شد.\nاز گزینه های زیر برای مدیریت تیکت استفاده کن.",
+    supportMenu(ctx)
+  );
+}
+
+function formatTicketTimestamp(value) {
+  const parsed = value ? new Date(value) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return "نامشخص";
+  return parsed.toLocaleString("fa-IR");
+}
+
+async function listMySupportTickets(ctx) {
+  const userId = await ensureUser(ctx);
+  await ensureSupportTables();
+
+  const rows = await query(
+    `SELECT id, subject, status, priority, updated_at
+     FROM support_tickets
+     WHERE user_id = $1
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 12`,
+    [userId]
+  );
+
+  if (!rows.rows.length) {
+    await ctx.reply("هنوز تیکتی ثبت نکرده ای.", supportMenu(ctx));
+    return;
+  }
+
+  const list = rows.rows
+    .map((item) => `#${item.id} | ${item.status} | ${item.priority}\n${item.subject}\n${formatTicketTimestamp(item.updated_at)}`)
+    .join("\n\n");
+
+  await ctx.reply(
+    `📂 تیکت های شما:\n\n${list}\n\nبرای مشاهده جزئیات، گزینه «${SUPPORT_MENU_DETAIL}» را بزن.`,
+    supportMenu(ctx)
+  );
+}
+
+async function showMySupportTicketById(ctx, ticketId) {
+  const userId = await ensureUser(ctx);
+  await ensureSupportTables();
+
+  const ticketRes = await query(
+    `SELECT *
+     FROM support_tickets
+     WHERE id = $1
+       AND user_id = $2
+     LIMIT 1`,
+    [ticketId, userId]
+  );
+  if (!ticketRes.rows.length) {
+    await ctx.reply("تیکتی با این شماره برای شما پیدا نشد.", supportMenu(ctx));
+    return;
+  }
+
+  const ticket = ticketRes.rows[0];
+  const messagesRes = await query(
+    `SELECT sender_role, message_text, created_at
+     FROM support_ticket_messages
+     WHERE ticket_id = $1
+     ORDER BY created_at ASC, id ASC
+     LIMIT 40`,
+    [ticketId]
+  );
+
+  const tail = messagesRes.rows.slice(-10);
+  const conversation = tail
+    .map((m) => `[${m.sender_role === "admin" ? "پشتیبانی" : "شما"}] ${m.message_text}`)
+    .join("\n\n");
+
+  await ctx.reply(
+    `🔎 جزئیات تیکت #${ticket.id}\n` +
+      `موضوع: ${ticket.subject}\n` +
+      `وضعیت: ${ticket.status}\n` +
+      `اولویت: ${ticket.priority}\n` +
+      `آخرین به‌روزرسانی: ${formatTicketTimestamp(ticket.updated_at)}\n\n` +
+      `آخرین پیام ها:\n${conversation || "-"}\n\n` +
+      `برای ارسال پیام جدید گزینه «${SUPPORT_MENU_REPLY}» را بزن.`,
+    supportMenu(ctx)
+  );
+}
+
+async function notifyAdminSupportUserReply(ticketId, userId, messageText) {
+  const adminChatId = String(config.telegramAdminChatId || config.adminUserId || "").trim();
+  if (!adminChatId || !isBotAvailable()) return;
+
+  const lines = [
+    "📩 پاسخ جدید کاربر روی تیکت",
+    `تیکت: #${ticketId}`,
+    `کاربر: #${userId}`,
+    "",
+    `پیام: ${String(messageText || "").slice(0, 400)}`,
+    "",
+    "برای مشاهده/پاسخ:",
+    `/ticket ${ticketId}`,
+    `/replyticket ${ticketId} <متن پاسخ>`
+  ];
+  try {
+    await sendTelegramMessage(adminChatId, lines.join("\n"));
+  } catch (error) {
+    logError("Support user reply admin notify failed", {
+      error: error?.message || String(error),
+      ticketId,
+      userId
+    });
+  }
+}
+
+async function replyMySupportTicketById(ctx, ticketId, messageText) {
+  const userId = await ensureUser(ctx);
+  await ensureSupportTables();
+
+  const ticketRes = await query(
+    `SELECT *
+     FROM support_tickets
+     WHERE id = $1
+       AND user_id = $2
+     LIMIT 1`,
+    [ticketId, userId]
+  );
+  if (!ticketRes.rows.length) {
+    await ctx.reply("تیکتی با این شماره برای شما پیدا نشد.", supportMenu(ctx));
+    return;
+  }
+  const ticket = ticketRes.rows[0];
+  if (ticket.status === "closed") {
+    await ctx.reply("این تیکت بسته شده و امکان پاسخ ندارد.", supportMenu(ctx));
+    return;
+  }
+
+  await query(
+    `INSERT INTO support_ticket_messages
+     (ticket_id, sender_role, sender_user_id, message_text)
+     VALUES ($1, 'user', $2, $3)`,
+    [ticketId, userId, messageText]
+  );
+
+  await query(
+    `UPDATE support_tickets
+     SET status = 'open',
+         last_user_message_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [ticketId]
+  );
+
+  await query(
+    `INSERT INTO admin_notifications
+     (type, title, message, payload, status)
+     VALUES ('support-ticket-user-reply', $1, $2, $3::jsonb, 'open')`,
+    [
+      "Support ticket user reply",
+      `Ticket #${ticketId} has a new user reply`,
+      JSON.stringify({ ticketId, userId, source: "telegram-bot" })
+    ]
+  );
+
+  await notifyAdminSupportUserReply(ticketId, userId, messageText);
+  await ctx.reply("پاسخ شما ثبت شد و برای پشتیبانی ارسال شد ✅", supportMenu(ctx));
+}
+
+async function startSupportDetailFlow(ctx) {
+  supportActionSessions.set(getSessionKey(ctx), { mode: "detail-await-id" });
+  await ctx.reply("شماره تیکت را بفرست. مثال: 123", Markup.keyboard([["لغو"]]).resize());
+}
+
+async function startSupportReplyFlow(ctx) {
+  supportActionSessions.set(getSessionKey(ctx), { mode: "reply-await-id", ticketId: null });
+  await ctx.reply("شماره تیکتی که می‌خواهی جواب بدهی را بفرست. مثال: 123", Markup.keyboard([["لغو"]]).resize());
+}
+
+async function handleSupportPanelInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = supportActionSessions.get(key);
+  if (!session) return false;
+
+  const text = String(ctx.message?.text || "").trim();
+  if (!text) return false;
+
+  if (text === "لغو" || text === SUPPORT_MENU_BACK) {
+    supportActionSessions.delete(key);
+    await ctx.reply("عملیات تیکت لغو شد.", supportMenu(ctx));
+    return true;
+  }
+
+  if (session.mode === "detail-await-id") {
+    const ticketId = Number(text);
+    if (!Number.isInteger(ticketId) || ticketId < 1) {
+      await ctx.reply("شماره تیکت نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    supportActionSessions.delete(key);
+    await showMySupportTicketById(ctx, ticketId);
+    return true;
+  }
+
+  if (session.mode === "reply-await-id") {
+    const ticketId = Number(text);
+    if (!Number.isInteger(ticketId) || ticketId < 1) {
+      await ctx.reply("شماره تیکت نامعتبر است. فقط عدد بفرست.");
+      return true;
+    }
+    session.mode = "reply-await-text";
+    session.ticketId = ticketId;
+    supportActionSessions.set(key, session);
+    await ctx.reply("متن پاسخ خودت را بنویس (حداقل 2 کاراکتر).", Markup.keyboard([["لغو"]]).resize());
+    return true;
+  }
+
+  if (session.mode === "reply-await-text") {
+    if (text.length < 2) {
+      await ctx.reply("متن پاسخ خیلی کوتاه است.");
+      return true;
+    }
+    const ticketId = Number(session.ticketId || 0);
+    supportActionSessions.delete(key);
+    await replyMySupportTicketById(ctx, ticketId, text);
+    return true;
+  }
+
+  return false;
+}
+
 async function saveSupportTicketFromBot(session, messageText) {
   const insertedTicket = await query(
     `INSERT INTO support_tickets
@@ -1448,7 +1696,7 @@ async function handleSupportTicketInput(ctx) {
   const text = String(ctx.message?.text || "").trim();
   if (text === "لغو") {
     supportTicketSessions.delete(key);
-    await ctx.reply("درخواست پشتیبانی لغو شد.", mainMenuForContext(ctx));
+    await ctx.reply("درخواست پشتیبانی لغو شد.", supportMenu(ctx));
     return true;
   }
 
@@ -1475,7 +1723,7 @@ async function handleSupportTicketInput(ctx) {
     logInfo("Support ticket created from bot", { ticketId: saved.id, userId: session.userId });
     await ctx.reply(
       `تیکت شما ثبت شد ✅\nشناسه تیکت: #${saved.id}\nبه زودی پاسخ پشتیبانی ارسال می‌شود.`,
-      mainMenuForContext(ctx)
+      supportMenu(ctx)
     );
   } catch (error) {
     supportTicketSessions.delete(key);
@@ -1483,7 +1731,7 @@ async function handleSupportTicketInput(ctx) {
       error: error?.message || String(error),
       userId: session.userId
     });
-    await ctx.reply("ثبت تیکت انجام نشد. دوباره تلاش کن.", mainMenuForContext(ctx));
+    await ctx.reply("ثبت تیکت انجام نشد. دوباره تلاش کن.", supportMenu(ctx));
   }
 
   return true;
@@ -3684,7 +3932,19 @@ const menuLabelAliases = new Map([
   [ADMIN_MENU_STARTED, "کاربران استارت کرده"],
   ["کاربران استارت کرده", ADMIN_MENU_STARTED],
   [ADMIN_MENU_HELP, "راهنمای ادمین"],
-  ["راهنمای ادمین", ADMIN_MENU_HELP]
+  ["راهنمای ادمین", ADMIN_MENU_HELP],
+  [SUPPORT_MENU_NEW, "ثبت تیکت جدید"],
+  ["ثبت تیکت جدید", SUPPORT_MENU_NEW],
+  [SUPPORT_MENU_MY, "تیکت های من"],
+  ["تیکت های من", SUPPORT_MENU_MY],
+  [SUPPORT_MENU_DETAIL, "مشاهده تیکت با شماره"],
+  ["مشاهده تیکت با شماره", SUPPORT_MENU_DETAIL],
+  [SUPPORT_MENU_REPLY, "پاسخ به تیکت"],
+  ["پاسخ به تیکت", SUPPORT_MENU_REPLY],
+  [SUPPORT_MENU_HELP, "راهنمای تیکت"],
+  ["راهنمای تیکت", SUPPORT_MENU_HELP],
+  [SUPPORT_MENU_BACK, "بازگشت از پشتیبانی"],
+  ["بازگشت از پشتیبانی", SUPPORT_MENU_BACK]
 ]);
 
 function normalizeMenuText(text) {
@@ -4046,6 +4306,9 @@ function registerHandlers(bot) {
       ctx.message.text = normalizeMenuText(ctx.message.text);
     }
 
+    const handledSupportPanel = await handleSupportPanelInput(ctx);
+    if (handledSupportPanel) return;
+
     const handledSupport = await handleSupportTicketInput(ctx);
     if (handledSupport) return;
 
@@ -4164,7 +4427,42 @@ function registerHandlers(bot) {
   });
 
   bot.hears(/^پشتیبانی$/i, async (ctx) => {
+    await showSupportTicketPanel(ctx);
+  });
+
+  bot.hears(/^ثبت تیکت جدید$/i, async (ctx) => {
+    supportActionSessions.delete(getSessionKey(ctx));
     await startSupportTicketWizard(ctx);
+  });
+
+  bot.hears(/^تیکت های من$/i, async (ctx) => {
+    supportActionSessions.delete(getSessionKey(ctx));
+    await listMySupportTickets(ctx);
+  });
+
+  bot.hears(/^مشاهده تیکت با شماره$/i, async (ctx) => {
+    await startSupportDetailFlow(ctx);
+  });
+
+  bot.hears(/^پاسخ به تیکت$/i, async (ctx) => {
+    await startSupportReplyFlow(ctx);
+  });
+
+  bot.hears(/^راهنمای تیکت$/i, async (ctx) => {
+    await ctx.reply(
+      "راهنمای پنل تیکت:\n" +
+        `1) ${SUPPORT_MENU_NEW}: تیکت جدید ثبت می‌کنی.\n` +
+        `2) ${SUPPORT_MENU_MY}: آخرین تیکت های خودت را می‌بینی.\n` +
+        `3) ${SUPPORT_MENU_DETAIL}: با شماره تیکت، جزئیات را می‌بینی.\n` +
+        `4) ${SUPPORT_MENU_REPLY}: روی تیکت قبلی خودت پیام جدید می‌فرستی.`,
+      supportMenu(ctx)
+    );
+  });
+
+  bot.hears(SUPPORT_MENU_BACK, async (ctx) => {
+    supportActionSessions.delete(getSessionKey(ctx));
+    supportTicketSessions.delete(getSessionKey(ctx));
+    await ctx.reply("از پنل پشتیبانی خارج شدی.", mainMenuForContext(ctx));
   });
 
   bot.hears(/^\/tickets$/i, async (ctx) => {
