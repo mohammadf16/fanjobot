@@ -3,6 +3,7 @@ const cors = require("cors");
 const { config } = require("./config");
 const { closeDb } = require("./db");
 const { attachBot } = require("./bot");
+const { initConsoleCapture, logInfo, logError } = require("./services/logger");
 
 const healthRoutes = require("./routes/health");
 const authRoutes = require("./routes/auth");
@@ -24,6 +25,8 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
 let botRuntime;
+initConsoleCapture();
+logInfo("Server bootstrap started");
 
 async function bootstrap() {
   app.use("/", healthRoutes);
@@ -44,14 +47,19 @@ async function bootstrap() {
 
   try {
     botRuntime = await attachBot(app);
+    if (botRuntime?.mode) {
+      logInfo("Bot attached", { mode: botRuntime.mode, webhookPath: botRuntime.webhookPath || null });
+    }
   } catch (error) {
     botRuntime = null;
     console.error("Telegram bot startup failed. API will continue without bot.");
     console.error(error?.message || error);
+    logError("Telegram bot startup failed", { error: error?.message || String(error) });
   }
 
   app.listen(config.port, () => {
     console.log(`Fanjobo API listening on ${config.port}`);
+    logInfo("HTTP server listening", { port: config.port });
     if (botRuntime?.mode === "webhook") {
       console.log(`Telegram webhook path: ${botRuntime.webhookPath}`);
     }
@@ -60,11 +68,13 @@ async function bootstrap() {
 
 bootstrap().catch((error) => {
   console.error("Failed to bootstrap app", error);
+  logError("Failed to bootstrap app", { error: error?.message || String(error) });
   process.exit(1);
 });
 
 async function gracefulShutdown() {
   console.log("Shutting down...");
+  logInfo("Graceful shutdown requested");
   if (botRuntime?.bot) {
     botRuntime.bot.stop();
   }

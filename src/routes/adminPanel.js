@@ -1,6 +1,7 @@
 const express = require("express");
 const { query } = require("../db");
 const { config } = require("../config");
+const { getLogs } = require("../services/logger");
 
 const router = express.Router();
 
@@ -151,6 +152,20 @@ router.patch("/notifications/:notificationId", async (req, res, next) => {
 
     if (!updated.rows.length) return res.status(404).json({ error: "Notification not found" });
     res.json({ notification: updated.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/logs", async (req, res, next) => {
+  try {
+    const result = getLogs({
+      level: req.query.level || null,
+      search: req.query.search || null,
+      limit: req.query.limit || 300
+    });
+
+    res.json(result);
   } catch (error) {
     next(error);
   }
@@ -956,7 +971,7 @@ router.get("/content", async (req, res, next) => {
        FROM contents
        WHERE ($1::text IS NULL OR type = $1)
          AND ($2::text IS NULL OR kind = $2)
-         AND ($3::text IS NULL OR is_published = $3)
+         AND ($3::boolean IS NULL OR is_published = $3::boolean)
        ORDER BY created_at DESC
        LIMIT $4`,
       [

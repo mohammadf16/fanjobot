@@ -2,6 +2,7 @@
 const { config } = require("./config");
 const { query } = require("./db");
 const { uploadBufferToDrive } = require("./services/googleDrive");
+const { logInfo, logError } = require("./services/logger");
 const {
   buildSkillMap,
   levelToNumber,
@@ -471,6 +472,7 @@ async function startUniversitySubmissionWizard(ctx) {
   await ctx.reply(
     "فرم ارسال محتوای دانشگاه شروع شد. اطلاعات کامل بفرست تا برای ادمین در صف بررسی ثبت شود."
   );
+  logInfo("University submission wizard started", { userId, telegramId: String(ctx.from?.id || "") });
   await askSubmissionStep(ctx, submissionSessions.get(key));
 }
 
@@ -647,6 +649,11 @@ async function handleSubmissionWizardMediaInput(ctx) {
     return true;
   } catch (error) {
     console.error(error);
+    logError("University submission file upload failed", {
+      error: error?.message || String(error),
+      userId: session.userId,
+      fileName: media.fileName
+    });
     await ctx.reply("آپلود فایل انجام نشد. دوباره فایل را ارسال کن.");
     return true;
   }
@@ -695,12 +702,14 @@ async function handleSubmissionWizardInput(ctx) {
     try {
       const saved = await saveUniversitySubmission(session);
       submissionSessions.delete(key);
+      logInfo("University submission saved", { submissionId: saved.id, userId: session.userId });
       await ctx.reply(
         `ارسال شما ثبت شد و برای ادمین رفت.\nشناسه ارسال: #${saved.id}\nوضعیت: در انتظار بررسی`,
         universityMenu()
       );
     } catch (error) {
       console.error(error);
+      logError("University submission save failed", { error: error?.message || String(error), userId: session.userId });
       submissionSessions.delete(key);
       await ctx.reply("خطا در ثبت ارسال. دوباره تلاش کن.", universityMenu());
     }
@@ -2315,6 +2324,7 @@ function registerHandlers(bot) {
 
   bot.catch((error) => {
     console.error("Telegram bot error:", error);
+    logError("Telegram bot runtime error", { error: error?.message || String(error) });
   });
 }
 
@@ -2343,12 +2353,14 @@ async function attachBot(app) {
     await bot.telegram.setWebhook(webhookUrl);
 
     console.log(`Telegram bot webhook set: ${webhookUrl}`);
+    logInfo("Telegram bot webhook configured", { webhookUrl, webhookPath });
 
     return { bot, mode: "webhook", webhookPath, webhookUrl };
   }
 
   await bot.launch();
   console.log("Telegram bot polling is running.");
+  logInfo("Telegram bot polling is running");
 
   return { bot, mode: "polling" };
 }
