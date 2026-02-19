@@ -966,6 +966,16 @@ router.patch("/industry/applications/:applicationId/status", async (req, res, ne
 
 router.get("/content", async (req, res, next) => {
   try {
+    const rawPublished = req.query.isPublished;
+    const isPublishedFilter =
+      rawPublished === undefined
+        ? null
+        : String(rawPublished).toLowerCase() === "true"
+        ? true
+        : String(rawPublished).toLowerCase() === "false"
+        ? false
+        : null;
+
     const rows = await query(
       `SELECT *
        FROM contents
@@ -977,7 +987,7 @@ router.get("/content", async (req, res, next) => {
       [
         req.query.type || null,
         req.query.kind || null,
-        req.query.isPublished === undefined ? null : String(req.query.isPublished).toLowerCase() === "true",
+        isPublishedFilter,
         toLimit(req.query.limit, 150)
       ]
     );

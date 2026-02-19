@@ -1,4 +1,5 @@
 const fs = require("fs");
+const { Readable } = require("stream");
 const { google } = require("googleapis");
 const { config } = require("../config");
 
@@ -95,7 +96,7 @@ async function uploadBufferToDrive({
     },
     media: {
       mimeType,
-      body: Buffer.from(fileBuffer)
+      body: Readable.from(Buffer.from(fileBuffer))
     },
     fields: "id,name,webViewLink"
   });
