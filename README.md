@@ -37,6 +37,7 @@ cp .env.example .env
 - `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`
 - Database defaults to SQLite file in project path: `db/fanjobo.db`
 - For admin APIs: set `ADMIN_API_KEY`
+- Optional but recommended for strict admin access: `ADMIN_USER_ID`
 4. Initialize DB:
 ```bash
 npm run db:init
@@ -64,6 +65,18 @@ npm start
   - `${TELEGRAM_WEBHOOK_DOMAIN}${TELEGRAM_WEBHOOK_PATH}`
   - If path is empty, default path is `/telegram/webhook/<bot-id-prefix>`
 - If webhook vars are not set, bot falls back to polling mode (good for local dev).
+
+## Admin web panel
+- URL: `/admin` on your deployed domain (example: `https://<railway-domain>/admin`)
+- Login inside browser with:
+  - `ADMIN_API_KEY`
+  - `ADMIN_USER_ID` (if configured)
+- Panel features:
+  - dashboard stats
+  - user search/list
+  - full user register from admin panel
+  - profile edit/delete for users
+  - notifications + moderation queue view
 
 ## Google Drive setup (important)
 1. Create a Google Cloud project and enable **Google Drive API**.
@@ -148,6 +161,12 @@ npm start
 - `GET /api/community/submissions/meta`
 - `GET /api/community/submissions/my/:userId`
 - `GET /api/admin/notifications` (`x-admin-key`)
+- `GET /api/admin/dashboard/overview` (`x-admin-key`, optional `x-admin-id`)
+- `GET /api/admin/users` (`x-admin-key`, optional `x-admin-id`)
+- `GET /api/admin/users/:userId` (`x-admin-key`, optional `x-admin-id`)
+- `POST /api/admin/users/register` (`x-admin-key`, optional `x-admin-id`)
+- `PATCH /api/admin/users/:userId` (`x-admin-key`, optional `x-admin-id`)
+- `DELETE /api/admin/users/:userId` (`x-admin-key`, optional `x-admin-id`)
 - `POST /api/admin/industry/companies` (`x-admin-key`)
 - `POST /api/admin/industry/companies/:companyId/contacts` (`x-admin-key`)
 - `POST /api/admin/industry/opportunities` (`x-admin-key`)
@@ -204,6 +223,7 @@ npm start
 
 ## Admin and moderation
 - Admin APIs are protected by `x-admin-key` using `ADMIN_API_KEY`.
+- If `ADMIN_USER_ID` is set, admin APIs also require `x-admin-id` to match it.
 - Admin can create/approve/close opportunities, add projects/career paths/roadmaps/checklists, and publish/unpublish contents.
 - Students can submit notes/books/resources/videos/sample-questions/summaries.
 - Submission pre-filters run before saving (quality + banned words + link validation).

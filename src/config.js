@@ -31,6 +31,7 @@ const config = {
   driveIndustryFolderId: process.env.DRIVE_INDUSTRY_FOLDER_ID,
   googleServiceAccountJsonBase64: process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64,
   googleServiceAccountJsonPath: process.env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH,
+  adminUserId: process.env.ADMIN_USER_ID || "",
   adminApiKey: process.env.ADMIN_API_KEY || ""
 };
 

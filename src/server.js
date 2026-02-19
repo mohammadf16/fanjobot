@@ -15,6 +15,7 @@ const recommendationRoutes = require("./routes/recommendations");
 const roadmapRoutes = require("./routes/roadmap");
 const fileRoutes = require("./routes/files");
 const adminPanelRoutes = require("./routes/adminPanel");
+const adminUiRoutes = require("./routes/adminUi");
 const communitySubmissionsRoutes = require("./routes/communitySubmissions");
 const errorHandler = require("./routes/error");
 
@@ -37,6 +38,7 @@ async function bootstrap() {
   app.use("/api/files", fileRoutes);
   app.use("/api/admin", adminPanelRoutes);
   app.use("/api/community/submissions", communitySubmissionsRoutes);
+  app.use("/", adminUiRoutes);
 
   app.use(errorHandler);
 

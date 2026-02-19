@@ -14,6 +14,13 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ error: "Unauthorized admin request" });
   }
 
+  if (config.adminUserId) {
+    const adminId = String(req.headers["x-admin-id"] || "").trim();
+    if (!adminId || adminId !== String(config.adminUserId)) {
+      return res.status(401).json({ error: "Unauthorized admin id" });
+    }
+  }
+
   return next();
 }
 
@@ -23,6 +30,36 @@ function toLimit(raw, fallback = 50, max = 200) {
   return Math.min(max, Math.floor(parsed));
 }
 
+function toNullableString(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+function toStringArray(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean);
+  if (value === undefined || value === null || value === "") return [];
+  return String(value)
+    .split(/[,،]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function toSkillsArray(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const name = String(item.name || "").trim();
+      if (!name) return null;
+      const parsedScore = Number(item.score);
+      const score = Number.isFinite(parsedScore) ? Math.min(10, Math.max(1, parsedScore)) : 5;
+      return { name, score };
+    })
+    .filter(Boolean);
+}
+
 async function createNotification({ type, title, message, payload }) {
   await query(
     `INSERT INTO admin_notifications
@@ -30,6 +67,44 @@ async function createNotification({ type, title, message, payload }) {
      VALUES ($1, $2, $3, $4::jsonb, 'open')`,
     [type, title, message, JSON.stringify(payload || {})]
   );
+}
+
+function normalizeProfileForUpsert(rawInput, fallback = null) {
+  if (!rawInput || typeof rawInput !== "object") {
+    return null;
+  }
+
+  const base = fallback || {};
+  const major = toNullableString(rawInput.major ?? base.major);
+  const level = toNullableString(rawInput.level ?? base.level);
+  const term = toNullableString(rawInput.term ?? base.term);
+  const skillLevel = toNullableString(rawInput.skillLevel ?? rawInput.skill_level ?? base.skill_level ?? base.skillLevel);
+  const shortTermGoal = toNullableString(rawInput.shortTermGoal ?? rawInput.short_term_goal ?? base.short_term_goal ?? base.shortTermGoal);
+  const weeklyRaw = rawInput.weeklyHours ?? rawInput.weekly_hours ?? base.weekly_hours ?? base.weeklyHours;
+  const weeklyHours = Number(weeklyRaw);
+
+  if (!major || !level || !term || !skillLevel || !shortTermGoal || !Number.isFinite(weeklyHours) || weeklyHours <= 0) {
+    throw new Error(
+      "Profile requires major, level, term, skillLevel, shortTermGoal and weeklyHours (> 0)."
+    );
+  }
+
+  return {
+    university: toNullableString(rawInput.university ?? base.university),
+    city: toNullableString(rawInput.city ?? base.city),
+    major,
+    level,
+    term,
+    interests: toStringArray(rawInput.interests ?? base.interests),
+    skillLevel,
+    shortTermGoal,
+    weeklyHours: Math.floor(weeklyHours),
+    resumeUrl: toNullableString(rawInput.resumeUrl ?? rawInput.resume_url ?? base.resume_url ?? base.resumeUrl),
+    githubUrl: toNullableString(rawInput.githubUrl ?? rawInput.github_url ?? base.github_url ?? base.githubUrl),
+    portfolioUrl: toNullableString(rawInput.portfolioUrl ?? rawInput.portfolio_url ?? base.portfolio_url ?? base.portfolioUrl),
+    skills: toSkillsArray(rawInput.skills ?? base.skills),
+    passedCourses: toStringArray(rawInput.passedCourses ?? rawInput.passed_courses ?? base.passed_courses ?? base.passedCourses)
+  };
 }
 
 router.use(requireAdmin);
@@ -67,6 +142,344 @@ router.patch("/notifications/:notificationId", async (req, res, next) => {
 
     if (!updated.rows.length) return res.status(404).json({ error: "Notification not found" });
     res.json({ notification: updated.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/dashboard/overview", async (req, res, next) => {
+  try {
+    const totalsRes = await query(
+      `SELECT
+         (SELECT COUNT(*) FROM users) AS total_users,
+         (SELECT COUNT(*) FROM user_profiles) AS total_profiles,
+         (SELECT COUNT(*) FROM contents) AS total_contents,
+         (SELECT COUNT(*) FROM contents WHERE is_published = TRUE) AS published_contents,
+         (SELECT COUNT(*) FROM industry_opportunities) AS total_opportunities,
+         (SELECT COUNT(*) FROM industry_opportunities WHERE approval_status = 'pending') AS pending_opportunities,
+         (SELECT COUNT(*) FROM industry_projects) AS total_projects,
+         (SELECT COUNT(*) FROM industry_applications) AS total_applications,
+         (SELECT COUNT(*) FROM community_content_submissions) AS total_submissions,
+         (SELECT COUNT(*) FROM community_content_submissions WHERE status = 'pending') AS pending_submissions,
+         (SELECT COUNT(*) FROM admin_notifications WHERE status = 'open') AS open_notifications`
+    );
+
+    const recentUsersRes = await query(
+      `SELECT u.id, u.full_name, u.phone_or_email, u.telegram_id, u.created_at,
+              CASE WHEN p.user_id IS NULL THEN FALSE ELSE TRUE END AS has_profile
+       FROM users u
+       LEFT JOIN user_profiles p ON p.user_id = u.id
+       ORDER BY u.created_at DESC
+       LIMIT 8`
+    );
+
+    const totalsRaw = totalsRes.rows[0] || {};
+    const totals = Object.fromEntries(
+      Object.entries(totalsRaw).map(([key, value]) => [key, Number(value || 0)])
+    );
+
+    res.json({
+      overview: totals,
+      recentUsers: recentUsersRes.rows
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/users", async (req, res, next) => {
+  try {
+    const searchText = String(req.query.q || "").trim().toLowerCase();
+    const search = searchText ? `%${searchText}%` : null;
+    const hasProfile = req.query.hasProfile === undefined ? null : String(req.query.hasProfile).toLowerCase();
+    const limit = toLimit(req.query.limit, 100, 300);
+
+    const rows = await query(
+      `SELECT u.id, u.full_name, u.phone_or_email, u.telegram_id, u.created_at,
+              p.major, p.level, p.term, p.skill_level, p.updated_at AS profile_updated_at,
+              CASE WHEN p.user_id IS NULL THEN FALSE ELSE TRUE END AS has_profile
+       FROM users u
+       LEFT JOIN user_profiles p ON p.user_id = u.id
+       WHERE ($1::text IS NULL
+              OR LOWER(u.full_name) LIKE $1
+              OR LOWER(u.phone_or_email) LIKE $1
+              OR LOWER(COALESCE(u.telegram_id, '')) LIKE $1)
+         AND ($2::text IS NULL
+              OR ($2 = 'true' AND p.user_id IS NOT NULL)
+              OR ($2 = 'false' AND p.user_id IS NULL))
+       ORDER BY u.created_at DESC
+       LIMIT $3`,
+      [search, hasProfile, limit]
+    );
+
+    const count = await query(
+      `SELECT COUNT(*) AS total
+       FROM users u
+       LEFT JOIN user_profiles p ON p.user_id = u.id
+       WHERE ($1::text IS NULL
+              OR LOWER(u.full_name) LIKE $1
+              OR LOWER(u.phone_or_email) LIKE $1
+              OR LOWER(COALESCE(u.telegram_id, '')) LIKE $1)
+         AND ($2::text IS NULL
+              OR ($2 = 'true' AND p.user_id IS NOT NULL)
+              OR ($2 = 'false' AND p.user_id IS NULL))`,
+      [search, hasProfile]
+    );
+
+    res.json({
+      items: rows.rows,
+      total: Number(count.rows[0]?.total || 0),
+      limit
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/users/:userId", async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: "Invalid userId" });
+
+    const userRes = await query(
+      `SELECT u.id AS user_id, u.full_name, u.phone_or_email, u.telegram_id, u.created_at, p.*
+       FROM users u
+       LEFT JOIN user_profiles p ON p.user_id = u.id
+       WHERE u.id = $1
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!userRes.rows.length) return res.status(404).json({ error: "User not found" });
+
+    const [eventsRes, applicationsRes, projectsRes, submissionsRes] = await Promise.all([
+      query(
+        `SELECT id, event_type, payload, created_at
+         FROM user_events
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT 20`,
+        [userId]
+      ),
+      query(
+        `SELECT a.*, o.title AS opportunity_title
+         FROM industry_applications a
+         LEFT JOIN industry_opportunities o ON o.id = a.opportunity_id
+         WHERE a.user_id = $1
+         ORDER BY a.updated_at DESC
+         LIMIT 20`,
+        [userId]
+      ),
+      query(
+        `SELECT sp.*, p.title AS project_title
+         FROM industry_student_projects sp
+         LEFT JOIN industry_projects p ON p.id = sp.project_id
+         WHERE sp.user_id = $1
+         ORDER BY sp.updated_at DESC
+         LIMIT 20`,
+        [userId]
+      ),
+      query(
+        `SELECT id, section, content_kind, title, status, moderation_reason, created_at, reviewed_at
+         FROM community_content_submissions
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT 20`,
+        [userId]
+      )
+    ]);
+
+    res.json({
+      user: userRes.rows[0],
+      activity: {
+        events: eventsRes.rows,
+        applications: applicationsRes.rows,
+        studentProjects: projectsRes.rows,
+        submissions: submissionsRes.rows
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/users/register", async (req, res, next) => {
+  try {
+    const fullName = toNullableString(req.body?.fullName);
+    const phoneOrEmail = toNullableString(req.body?.phoneOrEmail);
+    const telegramId = toNullableString(req.body?.telegramId);
+
+    if (!fullName || !phoneOrEmail) {
+      return res.status(400).json({ error: "fullName and phoneOrEmail are required" });
+    }
+
+    const inserted = await query(
+      `INSERT INTO users (full_name, phone_or_email, telegram_id)
+       VALUES ($1, $2, $3)
+       RETURNING id, full_name, phone_or_email, telegram_id, created_at`,
+      [fullName, phoneOrEmail, telegramId]
+    );
+
+    const user = inserted.rows[0];
+    let profile = null;
+
+    if (req.body?.profile) {
+      const normalized = normalizeProfileForUpsert(req.body.profile);
+      const profileRes = await query(
+        `INSERT INTO user_profiles
+         (user_id, university, city, major, level, term, interests, skill_level, short_term_goal, weekly_hours, resume_url, github_url, portfolio_url, skills, passed_courses)
+         VALUES
+         ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb)
+         RETURNING *`,
+        [
+          user.id,
+          normalized.university,
+          normalized.city,
+          normalized.major,
+          normalized.level,
+          normalized.term,
+          JSON.stringify(normalized.interests),
+          normalized.skillLevel,
+          normalized.shortTermGoal,
+          normalized.weeklyHours,
+          normalized.resumeUrl,
+          normalized.githubUrl,
+          normalized.portfolioUrl,
+          JSON.stringify(normalized.skills),
+          JSON.stringify(normalized.passedCourses)
+        ]
+      );
+
+      profile = profileRes.rows[0];
+    }
+
+    res.status(201).json({ user, profile });
+  } catch (error) {
+    if (String(error?.message || "").includes("Profile requires")) {
+      return res.status(400).json({ error: error.message });
+    }
+    next(error);
+  }
+});
+
+router.patch("/users/:userId", async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: "Invalid userId" });
+
+    const existingUser = await query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    if (!existingUser.rows.length) return res.status(404).json({ error: "User not found" });
+
+    const fields = [];
+    const values = [];
+    const fullName = req.body?.fullName;
+    const phoneOrEmail = req.body?.phoneOrEmail;
+    const telegramId = req.body?.telegramId;
+
+    if (fullName !== undefined) {
+      const normalized = toNullableString(fullName);
+      if (!normalized) return res.status(400).json({ error: "fullName cannot be empty" });
+      fields.push(`full_name = $${fields.length + 1}`);
+      values.push(normalized);
+    }
+    if (phoneOrEmail !== undefined) {
+      const normalized = toNullableString(phoneOrEmail);
+      if (!normalized) return res.status(400).json({ error: "phoneOrEmail cannot be empty" });
+      fields.push(`phone_or_email = $${fields.length + 1}`);
+      values.push(normalized);
+    }
+    if (telegramId !== undefined) {
+      fields.push(`telegram_id = $${fields.length + 1}`);
+      values.push(toNullableString(telegramId));
+    }
+
+    let user = existingUser.rows[0];
+    if (fields.length) {
+      const updated = await query(
+        `UPDATE users
+         SET ${fields.join(", ")}
+         WHERE id = $${fields.length + 1}
+         RETURNING id, full_name, phone_or_email, telegram_id, created_at`,
+        [...values, userId]
+      );
+      user = updated.rows[0];
+    }
+
+    let profile = null;
+    if (req.body?.profile) {
+      const existingProfile = await query(`SELECT * FROM user_profiles WHERE user_id = $1 LIMIT 1`, [userId]);
+      const normalized = normalizeProfileForUpsert(req.body.profile, existingProfile.rows[0] || null);
+
+      const upsert = await query(
+        `INSERT INTO user_profiles
+         (user_id, university, city, major, level, term, interests, skill_level, short_term_goal, weekly_hours, resume_url, github_url, portfolio_url, skills, passed_courses)
+         VALUES
+         ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb)
+         ON CONFLICT (user_id)
+         DO UPDATE SET
+           university = EXCLUDED.university,
+           city = EXCLUDED.city,
+           major = EXCLUDED.major,
+           level = EXCLUDED.level,
+           term = EXCLUDED.term,
+           interests = EXCLUDED.interests,
+           skill_level = EXCLUDED.skill_level,
+           short_term_goal = EXCLUDED.short_term_goal,
+           weekly_hours = EXCLUDED.weekly_hours,
+           resume_url = EXCLUDED.resume_url,
+           github_url = EXCLUDED.github_url,
+           portfolio_url = EXCLUDED.portfolio_url,
+           skills = EXCLUDED.skills,
+           passed_courses = EXCLUDED.passed_courses,
+           updated_at = NOW()
+         RETURNING *`,
+        [
+          userId,
+          normalized.university,
+          normalized.city,
+          normalized.major,
+          normalized.level,
+          normalized.term,
+          JSON.stringify(normalized.interests),
+          normalized.skillLevel,
+          normalized.shortTermGoal,
+          normalized.weeklyHours,
+          normalized.resumeUrl,
+          normalized.githubUrl,
+          normalized.portfolioUrl,
+          JSON.stringify(normalized.skills),
+          JSON.stringify(normalized.passedCourses)
+        ]
+      );
+
+      profile = upsert.rows[0];
+    } else {
+      const current = await query(`SELECT * FROM user_profiles WHERE user_id = $1 LIMIT 1`, [userId]);
+      profile = current.rows[0] || null;
+    }
+
+    res.json({ user, profile });
+  } catch (error) {
+    if (String(error?.message || "").includes("Profile requires")) {
+      return res.status(400).json({ error: error.message });
+    }
+    next(error);
+  }
+});
+
+router.delete("/users/:userId", async (req, res, next) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) return res.status(400).json({ error: "Invalid userId" });
+
+    if (config.adminUserId && String(userId) === String(config.adminUserId)) {
+      return res.status(400).json({ error: "Configured admin user cannot be deleted" });
+    }
+
+    const removed = await query(`DELETE FROM users WHERE id = $1 RETURNING id`, [userId]);
+    if (!removed.rows.length) return res.status(404).json({ error: "User not found" });
+
+    res.json({ ok: true, userId });
   } catch (error) {
     next(error);
   }
