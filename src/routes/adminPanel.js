@@ -227,6 +227,65 @@ router.get("/dashboard/overview", async (req, res, next) => {
   }
 });
 
+router.get("/dashboard/analytics", async (req, res, next) => {
+  try {
+    const [profilesByMajorRes, submissionsByStatusRes, contentsByTypeKindRes, appsByStatusRes, projectsByStatusRes] =
+      await Promise.all([
+        query(
+          `SELECT COALESCE(major, 'unknown') AS major, COUNT(*) AS total
+           FROM user_profiles
+           GROUP BY COALESCE(major, 'unknown')
+           ORDER BY COUNT(*) DESC
+           LIMIT 25`
+        ),
+        query(
+          `SELECT status, section, content_kind, COUNT(*) AS total
+           FROM community_content_submissions
+           GROUP BY status, section, content_kind
+           ORDER BY COUNT(*) DESC
+           LIMIT 100`
+        ),
+        query(
+          `SELECT type, kind,
+                  COUNT(*) AS total,
+                  SUM(CASE WHEN is_published = TRUE THEN 1 ELSE 0 END) AS published
+           FROM contents
+           GROUP BY type, kind
+           ORDER BY COUNT(*) DESC
+           LIMIT 100`
+        ),
+        query(
+          `SELECT status, COUNT(*) AS total
+           FROM industry_applications
+           GROUP BY status
+           ORDER BY COUNT(*) DESC`
+        ),
+        query(
+          `SELECT status, COUNT(*) AS total
+           FROM industry_projects
+           GROUP BY status
+           ORDER BY COUNT(*) DESC`
+        )
+      ]);
+
+    res.json({
+      analytics: {
+        profilesByMajor: profilesByMajorRes.rows.map((row) => ({ ...row, total: Number(row.total || 0) })),
+        submissionsByStatus: submissionsByStatusRes.rows.map((row) => ({ ...row, total: Number(row.total || 0) })),
+        contentsByTypeKind: contentsByTypeKindRes.rows.map((row) => ({
+          ...row,
+          total: Number(row.total || 0),
+          published: Number(row.published || 0)
+        })),
+        applicationsByStatus: appsByStatusRes.rows.map((row) => ({ ...row, total: Number(row.total || 0) })),
+        projectsByStatus: projectsByStatusRes.rows.map((row) => ({ ...row, total: Number(row.total || 0) }))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/users", async (req, res, next) => {
   try {
     const searchText = String(req.query.q || "").trim().toLowerCase();
@@ -337,6 +396,52 @@ router.get("/users/:userId", async (req, res, next) => {
         studentProjects: projectsRes.rows,
         submissions: submissionsRes.rows
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/profiles", async (req, res, next) => {
+  try {
+    const searchText = String(req.query.q || "").trim().toLowerCase();
+    const search = searchText ? `%${searchText}%` : null;
+    const major = toNullableString(req.query.major);
+    const level = toNullableString(req.query.level);
+    const limit = toLimit(req.query.limit, 120, 300);
+
+    const rows = await query(
+      `SELECT p.*, u.full_name, u.phone_or_email, u.telegram_id, u.created_at AS user_created_at
+       FROM user_profiles p
+       JOIN users u ON u.id = p.user_id
+       WHERE ($1::text IS NULL
+              OR LOWER(u.full_name) LIKE $1
+              OR LOWER(u.phone_or_email) LIKE $1
+              OR LOWER(COALESCE(u.telegram_id, '')) LIKE $1)
+         AND ($2::text IS NULL OR p.major = $2)
+         AND ($3::text IS NULL OR p.level = $3)
+       ORDER BY p.updated_at DESC
+       LIMIT $4`,
+      [search, major, level, limit]
+    );
+
+    const totalRes = await query(
+      `SELECT COUNT(*) AS total
+       FROM user_profiles p
+       JOIN users u ON u.id = p.user_id
+       WHERE ($1::text IS NULL
+              OR LOWER(u.full_name) LIKE $1
+              OR LOWER(u.phone_or_email) LIKE $1
+              OR LOWER(COALESCE(u.telegram_id, '')) LIKE $1)
+         AND ($2::text IS NULL OR p.major = $2)
+         AND ($3::text IS NULL OR p.level = $3)`,
+      [search, major, level]
+    );
+
+    res.json({
+      items: rows.rows,
+      total: Number(totalRes.rows[0]?.total || 0),
+      limit
     });
   } catch (error) {
     next(error);
@@ -751,6 +856,59 @@ router.get("/industry/projects", async (req, res, next) => {
   }
 });
 
+router.get("/industry/projects/:projectId/detail", async (req, res, next) => {
+  try {
+    const projectId = Number(req.params.projectId);
+    if (!projectId) return res.status(400).json({ error: "Invalid projectId" });
+
+    const projectRes = await query(
+      `SELECT p.*, c.name AS company_name
+       FROM industry_projects p
+       LEFT JOIN industry_companies c ON c.id = p.company_id
+       WHERE p.id = $1
+       LIMIT 1`,
+      [projectId]
+    );
+
+    if (!projectRes.rows.length) return res.status(404).json({ error: "Project not found" });
+
+    const [milestonesRes, tasksRes, studentProjectsRes] = await Promise.all([
+      query(
+        `SELECT *
+         FROM industry_project_milestones
+         WHERE project_id = $1
+         ORDER BY COALESCE(week_no, 999999), id ASC`,
+        [projectId]
+      ),
+      query(
+        `SELECT t.*, m.title AS milestone_title
+         FROM industry_project_tasks t
+         JOIN industry_project_milestones m ON m.id = t.milestone_id
+         WHERE m.project_id = $1
+         ORDER BY m.id ASC, t.id ASC`,
+        [projectId]
+      ),
+      query(
+        `SELECT sp.*, u.full_name, u.phone_or_email
+         FROM industry_student_projects sp
+         JOIN users u ON u.id = sp.user_id
+         WHERE sp.project_id = $1
+         ORDER BY sp.updated_at DESC`,
+        [projectId]
+      )
+    ]);
+
+    res.json({
+      project: projectRes.rows[0],
+      milestones: milestonesRes.rows,
+      tasks: tasksRes.rows,
+      studentProjects: studentProjectsRes.rows
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.patch("/industry/projects/:projectId/status", async (req, res, next) => {
   try {
     const projectId = Number(req.params.projectId);
@@ -1014,6 +1172,38 @@ router.get("/content", async (req, res, next) => {
   }
 });
 
+router.get("/content/:contentId", async (req, res, next) => {
+  try {
+    const contentId = Number(req.params.contentId);
+    if (!contentId) return res.status(400).json({ error: "Invalid contentId" });
+
+    const contentRes = await query(
+      `SELECT c.*, u.full_name, u.phone_or_email
+       FROM contents c
+       JOIN users u ON u.id = c.created_by_user_id
+       WHERE c.id = $1
+       LIMIT 1`,
+      [contentId]
+    );
+    if (!contentRes.rows.length) return res.status(404).json({ error: "Content not found" });
+
+    const filesRes = await query(
+      `SELECT *
+       FROM content_files
+       WHERE content_id = $1
+       ORDER BY created_at DESC`,
+      [contentId]
+    );
+
+    res.json({
+      content: contentRes.rows[0],
+      files: filesRes.rows
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.patch("/content/:contentId/publish", async (req, res, next) => {
   try {
     const contentId = Number(req.params.contentId);
@@ -1050,6 +1240,58 @@ router.get("/moderation/submissions", async (req, res, next) => {
     );
 
     res.json({ items: rows.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/moderation/submissions/:submissionId", async (req, res, next) => {
+  try {
+    const submissionId = Number(req.params.submissionId);
+    if (!submissionId) return res.status(400).json({ error: "Invalid submissionId" });
+
+    const submissionRes = await query(
+      `SELECT s.*, u.full_name, u.phone_or_email, u.telegram_id
+       FROM community_content_submissions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.id = $1
+       LIMIT 1`,
+      [submissionId]
+    );
+    if (!submissionRes.rows.length) return res.status(404).json({ error: "Submission not found" });
+
+    const submission = submissionRes.rows[0];
+    const driveMeta = extractDriveMetaFromTags(submission.tags);
+
+    const relatedContentRes = await query(
+      `SELECT c.*
+       FROM contents c
+       WHERE c.created_by_user_id = $1
+         AND c.title = $2
+       ORDER BY c.created_at DESC
+       LIMIT 1`,
+      [submission.user_id, submission.title]
+    );
+
+    const relatedContent = relatedContentRes.rows[0] || null;
+    let relatedFiles = [];
+    if (relatedContent?.id) {
+      const filesRes = await query(
+        `SELECT *
+         FROM content_files
+         WHERE content_id = $1
+         ORDER BY created_at DESC`,
+        [relatedContent.id]
+      );
+      relatedFiles = filesRes.rows;
+    }
+
+    res.json({
+      submission,
+      driveMeta,
+      relatedContent,
+      relatedFiles
+    });
   } catch (error) {
     next(error);
   }

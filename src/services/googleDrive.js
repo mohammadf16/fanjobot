@@ -152,6 +152,29 @@ function resolveParentFolder(contentType, contentKind) {
   return config.driveRootFolderId;
 }
 
+function normalizeFolderSegment(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  return raw
+    .replace(/[\\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/^\.+/, "")
+    .trim()
+    .slice(0, 100) || null;
+}
+
+function normalizeFolderSegments(segments) {
+  if (!Array.isArray(segments)) return [];
+  return segments.map(normalizeFolderSegment).filter(Boolean);
+}
+
+function escapeDriveQueryValue(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'");
+}
+
 async function ensureParentFolderAccessible(drive, folderId) {
   if (!folderId) {
     throw new Error("Drive folder id is missing. Set DRIVE_ROOT_FOLDER_ID (or section folder id).");
@@ -173,6 +196,57 @@ async function ensureParentFolderAccessible(drive, folderId) {
     }
     throw error;
   }
+}
+
+async function findChildFolder(drive, parentFolderId, name) {
+  const queryValue = escapeDriveQueryValue(name);
+  const parentValue = escapeDriveQueryValue(parentFolderId);
+
+  const listRes = await drive.files.list({
+    q: `'${parentValue}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${queryValue}' and trashed = false`,
+    fields: "files(id,name)",
+    pageSize: 5,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true
+  });
+
+  return listRes?.data?.files?.[0] || null;
+}
+
+async function createChildFolder(drive, parentFolderId, name) {
+  const createRes = await drive.files.create({
+    requestBody: {
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentFolderId]
+    },
+    fields: "id,name",
+    supportsAllDrives: true
+  });
+
+  return createRes?.data || null;
+}
+
+async function ensureNestedFolderPath(drive, parentFolderId, segments) {
+  const normalizedSegments = normalizeFolderSegments(segments);
+  if (!normalizedSegments.length) return parentFolderId;
+
+  let currentParentId = parentFolderId;
+  for (const segment of normalizedSegments) {
+    const existing = await findChildFolder(drive, currentParentId, segment);
+    if (existing?.id) {
+      currentParentId = existing.id;
+      continue;
+    }
+
+    const created = await createChildFolder(drive, currentParentId, segment);
+    if (!created?.id) {
+      throw new Error(`Failed to create Drive folder segment: ${segment}`);
+    }
+    currentParentId = created.id;
+  }
+
+  return currentParentId;
 }
 
 async function resolveAuthenticatedDriveAccount(drive) {
@@ -197,16 +271,18 @@ async function uploadBufferToDrive({
   mimeType,
   contentType,
   contentKind,
+  folderPathSegments = [],
   makePublic = false
 }) {
   const drive = await getDriveClient();
-  const parentFolderId = resolveParentFolder(contentType, contentKind);
-  await ensureParentFolderAccessible(drive, parentFolderId);
+  const baseParentFolderId = resolveParentFolder(contentType, contentKind);
+  await ensureParentFolderAccessible(drive, baseParentFolderId);
+  const finalParentFolderId = await ensureNestedFolderPath(drive, baseParentFolderId, folderPathSegments);
 
   const createRes = await drive.files.create({
     requestBody: {
       name: fileName,
-      parents: [parentFolderId]
+      parents: [finalParentFolderId]
     },
     media: {
       mimeType,
@@ -238,6 +314,7 @@ async function uploadBufferToDrive({
   return {
     fileId: metadata.data.id,
     fileName: metadata.data.name,
+    parentFolderId: finalParentFolderId,
     webViewLink: metadata.data.webViewLink,
     webContentLink: metadata.data.webContentLink
   };

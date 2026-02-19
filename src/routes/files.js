@@ -6,6 +6,42 @@ const { query } = require("../db");
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+function sanitizeDriveFolderSegment(value, fallback = null) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[\\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/^\.+/, "")
+    .trim()
+    .slice(0, 80);
+
+  return normalized || fallback;
+}
+
+function resolveFolderPathSegments(body = {}) {
+  const explicit = String(body.folderPath || "")
+    .split(/[,|>]/)
+    .map((segment) => sanitizeDriveFolderSegment(segment))
+    .filter(Boolean);
+  if (explicit.length) return explicit;
+
+  const contentType = String(body.contentType || "").trim();
+  const contentKind = sanitizeDriveFolderSegment(body.contentKind, "general");
+  const major = sanitizeDriveFolderSegment(body.major, "unknown-major");
+  const term = sanitizeDriveFolderSegment(body.term, "unknown-term");
+  const userId = sanitizeDriveFolderSegment(body.userId, null);
+
+  if (contentType === "university") {
+    return [contentKind, major, `term-${term}`, userId ? `user-${userId}` : null].filter(Boolean);
+  }
+
+  if (contentType === "industry") {
+    return [contentKind, userId ? `user-${userId}` : null].filter(Boolean);
+  }
+
+  return [];
+}
+
 router.post("/upload", upload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) {
@@ -24,6 +60,7 @@ router.post("/upload", upload.single("file"), async (req, res, next) => {
       mimeType: req.file.mimetype,
       contentType,
       contentKind,
+      folderPathSegments: resolveFolderPathSegments(req.body || {}),
       makePublic: makePublic === "true"
     });
 

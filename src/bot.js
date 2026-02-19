@@ -259,6 +259,18 @@ function parseList(value) {
     .filter(Boolean);
 }
 
+function sanitizeDriveFolderSegment(value, fallback = "unknown") {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[\\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/^\.+/, "")
+    .trim()
+    .slice(0, 80);
+
+  return normalized || fallback;
+}
+
 function parseSkillLevel(value) {
   const normalized = String(value || "").trim().toLowerCase();
 
@@ -562,11 +574,25 @@ async function askSubmissionStep(ctx, session) {
 async function startUniversitySubmissionWizard(ctx) {
   const userId = await ensureUser(ctx);
   const key = getSessionKey(ctx);
+  const profileRes = await query(
+    `SELECT u.full_name, p.major, p.term
+     FROM users u
+     LEFT JOIN user_profiles p ON p.user_id = u.id
+     WHERE u.id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  const profile = profileRes.rows[0] || {};
 
   submissionSessions.set(key, {
     userId,
     stepIndex: 0,
-    answers: {}
+    answers: {},
+    context: {
+      fullName: profile.full_name || null,
+      major: profile.major || null,
+      term: profile.term || null
+    }
   });
 
   await ctx.reply(
@@ -730,6 +756,13 @@ async function handleSubmissionWizardMediaInput(ctx) {
     }
     const arrayBuffer = await response.arrayBuffer();
     const fileBuffer = Buffer.from(arrayBuffer);
+    const majorFolder = sanitizeDriveFolderSegment(session.context?.major, "unknown-major");
+    const termFolder = sanitizeDriveFolderSegment(session.context?.term, "unknown-term");
+    const kindFolder = sanitizeDriveFolderSegment(session.answers.contentKind || "general");
+    const userFolder = sanitizeDriveFolderSegment(
+      session.context?.fullName ? `${session.userId}-${session.context.fullName}` : `user-${session.userId}`,
+      `user-${session.userId}`
+    );
 
     const drive = await uploadBufferToDrive({
       fileBuffer,
@@ -737,6 +770,7 @@ async function handleSubmissionWizardMediaInput(ctx) {
       mimeType: media.mimeType,
       contentType: "university",
       contentKind: session.answers.contentKind,
+      folderPathSegments: [kindFolder, majorFolder, `term-${termFolder}`, userFolder],
       makePublic: true
     });
 
