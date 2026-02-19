@@ -10,10 +10,7 @@ function parseServiceAccount() {
     try {
       const jsonText = fs.readFileSync(config.googleServiceAccountJsonPath, "utf8");
       const credentials = JSON.parse(jsonText);
-      if (!credentials.client_email || !credentials.private_key) {
-        throw new Error("Missing client_email/private_key in service account JSON.");
-      }
-      return credentials;
+      return normalizeServiceAccountCredentials(credentials);
     } catch (error) {
       throw new Error("Invalid GOOGLE_SERVICE_ACCOUNT_JSON_PATH. File must be valid service-account JSON.");
     }
@@ -33,11 +30,7 @@ function parseServiceAccount() {
       : Buffer.from(raw, "base64").toString("utf8");
 
     const credentials = JSON.parse(jsonText);
-    if (!credentials.client_email || !credentials.private_key) {
-      throw new Error("Missing client_email/private_key in service account JSON.");
-    }
-
-    return credentials;
+    return normalizeServiceAccountCredentials(credentials);
   } catch (error) {
     throw new Error(
       "Invalid GOOGLE_SERVICE_ACCOUNT_JSON_BASE64. Use a single-line base64-encoded service-account JSON."
@@ -45,26 +38,50 @@ function parseServiceAccount() {
   }
 }
 
-function createDriveClient() {
-  const credentials = parseServiceAccount();
-  const auth = new google.auth.JWT(
-    credentials.client_email,
-    undefined,
-    credentials.private_key,
-    scope
-  );
+function normalizeServiceAccountCredentials(credentials) {
+  const normalized = { ...(credentials || {}) };
 
-  return google.drive({ version: "v3", auth });
-}
-
-let driveClient = null;
-
-function getDriveClient() {
-  if (!driveClient) {
-    driveClient = createDriveClient();
+  if (typeof normalized.private_key === "string") {
+    normalized.private_key = normalized.private_key
+      .replace(/^"+|"+$/g, "")
+      .replace(/\\n/g, "\n")
+      .trim();
   }
 
-  return driveClient;
+  if (typeof normalized.client_email === "string") {
+    normalized.client_email = normalized.client_email.trim();
+  }
+
+  if (normalized.type && normalized.type !== "service_account") {
+    throw new Error("Invalid Google credentials type. Expected service_account JSON.");
+  }
+
+  if (!normalized.client_email || !normalized.private_key) {
+    throw new Error("Missing client_email/private_key in service account JSON.");
+  }
+
+  return normalized;
+}
+
+let driveClientPromise = null;
+
+async function getDriveClient() {
+  if (!driveClientPromise) {
+    driveClientPromise = (async () => {
+      const credentials = parseServiceAccount();
+      const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: scope
+      });
+      const client = await auth.getClient();
+      return google.drive({ version: "v3", auth: client });
+    })().catch((error) => {
+      driveClientPromise = null;
+      throw error;
+    });
+  }
+
+  return driveClientPromise;
 }
 
 function resolveParentFolder(contentType) {
@@ -86,7 +103,7 @@ async function uploadBufferToDrive({
   contentType,
   makePublic = false
 }) {
-  const drive = getDriveClient();
+  const drive = await getDriveClient();
   const parentFolderId = resolveParentFolder(contentType);
 
   const createRes = await drive.files.create({
