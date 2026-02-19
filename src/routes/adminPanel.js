@@ -60,6 +60,15 @@ function toSkillsArray(value) {
     .filter(Boolean);
 }
 
+function extractDriveMetaFromTags(tags) {
+  const values = Array.isArray(tags) ? tags.map((item) => String(item || "")) : [];
+  const driveFileId = values.find((item) => item.startsWith("_drive_file_id:"))?.replace("_drive_file_id:", "") || null;
+  const mimeType = values.find((item) => item.startsWith("_drive_mime:"))?.replace("_drive_mime:", "") || null;
+  const cleanTags = values.filter((item) => !item.startsWith("_drive_file_id:") && !item.startsWith("_drive_mime:"));
+
+  return { driveFileId, mimeType, cleanTags };
+}
+
 async function createNotification({ type, title, message, payload }) {
   await query(
     `INSERT INTO admin_notifications
@@ -1022,6 +1031,8 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
     const submission = submissionRes.rows[0];
 
     if (action === "approve") {
+      const driveMeta = extractDriveMetaFromTags(submission.tags);
+
       const insertedContent = await query(
         `INSERT INTO contents
          (created_by_user_id, title, description, type, kind, major, term, skill_level, tags, estimated_hours, is_published)
@@ -1035,7 +1046,7 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
           submission.content_kind,
           submission.major || null,
           submission.term || null,
-          JSON.stringify(Array.isArray(submission.tags) ? submission.tags : [])
+          JSON.stringify(driveMeta.cleanTags)
         ]
       );
 
@@ -1044,7 +1055,12 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
           `INSERT INTO content_files
            (content_id, drive_file_id, drive_link, mime_type)
            VALUES ($1, $2, $3, $4)`,
-          [insertedContent.rows[0].id, `community-${submission.id}`, submission.external_link, null]
+          [
+            insertedContent.rows[0].id,
+            driveMeta.driveFileId || `community-${submission.id}`,
+            submission.external_link,
+            driveMeta.mimeType
+          ]
         );
       }
 

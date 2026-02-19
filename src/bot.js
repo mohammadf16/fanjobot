@@ -1,6 +1,7 @@
 ﻿const { Telegraf, Markup } = require("telegraf");
 const { config } = require("./config");
 const { query } = require("./db");
+const { uploadBufferToDrive } = require("./services/googleDrive");
 const {
   buildSkillMap,
   levelToNumber,
@@ -136,24 +137,16 @@ const UNIVERSITY_SUBMISSION_STEPS = [
     question: "این محتوا برای کدام استاد است؟ (اختیاری - برای رد: «رد»)"
   },
   {
-    key: "purpose",
-    question: "این محتوا برای چه کاری مفید است؟ (مثلا جمع بندی قبل امتحان)"
-  },
-  {
-    key: "usageGuide",
-    question: "چطور باید از این محتوا استفاده شود؟"
-  },
-  {
     key: "title",
     question: "عنوان محتوا را بنویس:"
   },
   {
-    key: "description",
-    question: "توضیح کامل محتوا را بنویس:"
+    key: "purpose",
+    question: "این محتوا برای چه کاری مفید است؟ (مثلا جمع بندی قبل امتحان)"
   },
   {
-    key: "externalLink",
-    question: "اگر لینک داری بفرست (اختیاری - برای رد: «رد»)"
+    key: "fileUpload",
+    question: "فایل محتوا را آپلود کن (PDF/DOCX/ZIP/عکس)."
   },
   {
     key: "tags",
@@ -440,15 +433,19 @@ async function askSubmissionStep(ctx, session) {
       `استاد مرتبط: ${session.answers.professorName || "ثبت نشده"}\n` +
       `عنوان: ${session.answers.title}\n` +
       `هدف: ${session.answers.purpose}\n` +
-      `روش استفاده: ${session.answers.usageGuide}\n` +
-      `توضیح: ${String(session.answers.description || "").slice(0, 180)}...`,
+      `فایل: ${session.answers.fileName || "ثبت نشده"}`,
       Markup.keyboard([[UNIVERSITY_SUBMISSION_DONE], [UNIVERSITY_SUBMISSION_BACK]]).resize()
     );
     return;
   }
 
-  if (step.key === "professorName" || step.key === "externalLink" || step.key === "tags") {
+  if (step.key === "professorName" || step.key === "tags") {
     await ctx.reply(step.question, submissionSimpleKeyboard());
+    return;
+  }
+
+  if (step.key === "fileUpload") {
+    await ctx.reply(step.question, Markup.keyboard([[UNIVERSITY_SUBMISSION_BACK]]).resize());
     return;
   }
 
@@ -473,7 +470,7 @@ async function startUniversitySubmissionWizard(ctx) {
 
 function parseSubmissionStepValue(step, text) {
   const raw = String(text || "").trim();
-  if (!raw && !["professorName", "externalLink", "tags"].includes(step.key)) {
+  if (!raw && !["professorName", "tags"].includes(step.key)) {
     return { ok: false, message: "این فیلد الزامی است." };
   }
 
@@ -499,15 +496,8 @@ function parseSubmissionStepValue(step, text) {
     return { ok: true, value: raw };
   }
 
-  if (step.key === "description") {
-    if (raw.length < 20) return { ok: false, message: "توضیح باید حداقل 20 کاراکتر باشد." };
-    return { ok: true, value: raw };
-  }
-
-  if (step.key === "externalLink") {
-    if (isSkipText(raw)) return { ok: true, value: null };
-    if (!validateUrl(raw)) return { ok: false, message: "لینک معتبر نیست. با http:// یا https:// شروع کن." };
-    return { ok: true, value: raw };
+  if (step.key === "fileUpload") {
+    return { ok: false, message: "در این مرحله فایل را ارسال کن (به صورت document/photo)." };
   }
 
   if (step.key === "tags") {
@@ -541,9 +531,7 @@ async function saveUniversitySubmission(session) {
     `بخش مقصد: ${session.answers.contentKindLabel}`,
     `درس مرتبط: ${session.answers.courseName || "ثبت نشده"}`,
     `استاد مرتبط: ${session.answers.professorName || "ثبت نشده"}`,
-    `هدف: ${session.answers.purpose}`,
-    `نحوه استفاده: ${session.answers.usageGuide}`,
-    session.answers.description
+    `هدف: ${session.answers.purpose}`
   ].join("\n\n");
 
   const inserted = await query(
@@ -558,8 +546,12 @@ async function saveUniversitySubmission(session) {
       composedDescription,
       major,
       term,
-      JSON.stringify(session.answers.tags || []),
-      session.answers.externalLink || null
+      JSON.stringify([
+        ...(session.answers.tags || []),
+        session.answers.driveFileId ? `_drive_file_id:${session.answers.driveFileId}` : null,
+        session.answers.mimeType ? `_drive_mime:${session.answers.mimeType}` : null
+      ].filter(Boolean)),
+      session.answers.driveLink || null
     ]
   );
 
@@ -582,6 +574,78 @@ async function saveUniversitySubmission(session) {
   return inserted.rows[0];
 }
 
+function extractSubmissionFile(ctx) {
+  const doc = ctx.message?.document;
+  if (doc) {
+    return {
+      fileId: doc.file_id,
+      fileName: doc.file_name || `telegram-file-${Date.now()}`,
+      mimeType: doc.mime_type || "application/octet-stream"
+    };
+  }
+
+  const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
+  if (photos.length) {
+    const best = photos[photos.length - 1];
+    return {
+      fileId: best.file_id,
+      fileName: `telegram-photo-${Date.now()}.jpg`,
+      mimeType: "image/jpeg"
+    };
+  }
+
+  return null;
+}
+
+async function handleSubmissionWizardMediaInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = submissionSessions.get(key);
+  if (!session) return false;
+
+  const step = UNIVERSITY_SUBMISSION_STEPS[session.stepIndex];
+  if (!step || step.key !== "fileUpload") return false;
+
+  const media = extractSubmissionFile(ctx);
+  if (!media) {
+    await ctx.reply("فایل معتبر نیست. لطفا فایل را به صورت document یا photo بفرست.");
+    return true;
+  }
+
+  try {
+    const fileUrl = await ctx.telegram.getFileLink(media.fileId);
+    const response = await fetch(String(fileUrl));
+    if (!response.ok) {
+      throw new Error(`Telegram file download failed with status ${response.status}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const fileBuffer = Buffer.from(arrayBuffer);
+
+    const drive = await uploadBufferToDrive({
+      fileBuffer,
+      fileName: media.fileName,
+      mimeType: media.mimeType,
+      contentType: "university",
+      makePublic: true
+    });
+
+    session.answers.fileName = media.fileName;
+    session.answers.mimeType = media.mimeType;
+    session.answers.driveFileId = drive.fileId;
+    session.answers.driveLink = drive.webViewLink || drive.webContentLink || null;
+
+    session.stepIndex += 1;
+    submissionSessions.set(key, session);
+
+    await ctx.reply("فایل با موفقیت آپلود شد.");
+    await askSubmissionStep(ctx, session);
+    return true;
+  } catch (error) {
+    console.error(error);
+    await ctx.reply("آپلود فایل انجام نشد. دوباره فایل را ارسال کن.");
+    return true;
+  }
+}
+
 async function handleSubmissionWizardInput(ctx) {
   const key = getSessionKey(ctx);
   const session = submissionSessions.get(key);
@@ -601,6 +665,11 @@ async function handleSubmissionWizardInput(ctx) {
     return true;
   }
 
+  if (step.key === "fileUpload") {
+    await ctx.reply("در این مرحله باید فایل را ارسال کنی (document/photo).");
+    return true;
+  }
+
   const parsed = parseSubmissionStepValue(step, text);
   if (!parsed.ok) {
     await ctx.reply(parsed.message);
@@ -612,6 +681,11 @@ async function handleSubmissionWizardInput(ctx) {
     session.answers.contentKind = parsed.value.contentKind;
     session.answers.contentKindLabel = parsed.value.contentKindLabel;
   } else if (step.key === "confirm") {
+    if (!session.answers.driveLink) {
+      await ctx.reply("قبل از ثبت نهایی، فایل را آپلود کن.");
+      return true;
+    }
+
     try {
       const saved = await saveUniversitySubmission(session);
       submissionSessions.delete(key);
@@ -1965,6 +2039,12 @@ async function handleProfileWizardInput(ctx) {
 }
 
 function registerHandlers(bot) {
+  bot.on(["document", "photo"], async (ctx, next) => {
+    const handledMedia = await handleSubmissionWizardMediaInput(ctx);
+    if (handledMedia) return;
+    return next();
+  });
+
   bot.on("text", async (ctx, next) => {
     const handledSubmission = await handleSubmissionWizardInput(ctx);
     if (handledSubmission) return;
