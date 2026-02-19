@@ -5,7 +5,7 @@ const { executeSqlScript, closeDb, getDbProvider } = require("../src/db");
 async function run() {
   const sqlFile = getDbProvider() === "postgres" ? "init.sql" : "init.sqlite.sql";
   const filePath = path.join(__dirname, "..", "sql", sqlFile);
-  const sql = fs.readFileSync(filePath, "utf8");
+  const sql = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
 
   await executeSqlScript(sql);
   await closeDb();
