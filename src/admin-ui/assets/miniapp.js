@@ -4,9 +4,12 @@
     tgUser: null,
     user: null,
     profile: null,
+    profileCompletion: null,
+    profileComplete: false,
     industryProfile: null,
     isAdmin: false,
     activeTab: "dashboard",
+    tabHistory: [],
     university: {
       all: [],
       filtered: [],
@@ -85,6 +88,32 @@
 
   function asArray(value) {
     return Array.isArray(value) ? value : [];
+  }
+
+  function getProfileCompletion(profile, serverCompletion) {
+    if (serverCompletion && typeof serverCompletion.completed === "boolean") {
+      return {
+        completed: Boolean(serverCompletion.completed),
+        missingFields: asArray(serverCompletion.missingFields)
+      };
+    }
+
+    var p = profile || {};
+    var missing = [];
+    if (!String(p.university || "").trim()) missing.push("university");
+    if (!String(p.major || "").trim()) missing.push("major");
+    if (!String(p.level || "").trim()) missing.push("level");
+    if (!String(p.term || "").trim()) missing.push("term");
+    if (!String(p.skill_level || "").trim()) missing.push("skill_level");
+    if (!String(p.short_term_goal || "").trim()) missing.push("short_term_goal");
+
+    var weeklyHours = Number(p.weekly_hours || 0);
+    if (!Number.isFinite(weeklyHours) || weeklyHours < 1) missing.push("weekly_hours");
+
+    return {
+      completed: missing.length === 0,
+      missingFields: missing
+    };
   }
 
   var STATUS_LABELS = {
@@ -199,6 +228,22 @@
     return params.toString();
   }
 
+  function syncTelegramBackButton() {
+    var tg = state.tg;
+    if (!tg || !tg.BackButton) return;
+    if (state.activeTab && state.activeTab !== "dashboard") tg.BackButton.show();
+    else tg.BackButton.hide();
+  }
+
+  function goBackTab() {
+    var previous = state.tabHistory.pop();
+    if (!previous) {
+      setTab("dashboard", { fromHistory: true });
+      return;
+    }
+    setTab(previous, { fromHistory: true });
+  }
+
   function buildNav() {
     var nav = el("miniNav");
     if (!nav) return;
@@ -210,18 +255,48 @@
 
     nav.innerHTML = visibleTabs
       .map(function (item) {
-        return "<button data-tab='" + item.key + "'>" + esc(item.label) + "</button>";
+        var locked = !state.profileComplete && item.key !== "dashboard" && item.key !== "profile";
+        var lockAttr = locked ? " data-locked='1'" : "";
+        return "<button data-tab='" + item.key + "'" + lockAttr + ">" + esc(item.label) + "</button>";
       })
       .join("");
 
     nav.addEventListener("click", function (event) {
       var btn = event.target.closest("button[data-tab]");
       if (!btn) return;
+      if (btn.dataset.locked === "1") {
+        toast("ابتدا پروفایل را کامل کنید", "warn");
+        setTab("profile");
+        return;
+      }
       setTab(btn.dataset.tab);
     });
   }
 
-  function setTab(key) {
+  function refreshNavLocks() {
+    var nav = el("miniNav");
+    if (!nav) return;
+    var buttons = nav.querySelectorAll("button[data-tab]");
+    buttons.forEach(function (btn) {
+      var tabKey = btn.dataset.tab;
+      var locked = !state.profileComplete && tabKey !== "dashboard" && tabKey !== "profile";
+      if (locked) btn.setAttribute("data-locked", "1");
+      else btn.removeAttribute("data-locked");
+    });
+  }
+
+  function setTab(key, options) {
+    var opts = options || {};
+    if (!state.profileComplete && key !== "profile" && key !== "dashboard") {
+      toast("ابتدا پروفایل را کامل کنید", "warn");
+      key = "profile";
+    }
+
+    if (!opts.fromHistory && state.activeTab && state.activeTab !== key) {
+      state.tabHistory.push(state.activeTab);
+      if (state.tabHistory.length > 30) state.tabHistory.shift();
+    }
+
     state.activeTab = key;
     var navEl = el("miniNav");
     if (!navEl) return;
@@ -235,6 +310,7 @@
     sections.forEach(function (node) {
       node.classList.toggle("active", node.id === "tab-" + key);
     });
+    syncTelegramBackButton();
 
     if (key === "dashboard") loadDashboard().catch(onError);
     if (key === "profile") buildProfileForm();
@@ -368,6 +444,9 @@
 
     var res = await api("/api/profile/upsert", { method: "POST", body: payload });
     state.profile = Object.assign({}, state.profile || {}, res.profile || {});
+    state.profileCompletion = getProfileCompletion(state.profile, null);
+    state.profileComplete = Boolean(state.profileCompletion.completed);
+    refreshNavLocks();
     toast("پروفایل ذخیره شد", "ok");
   }
 
@@ -409,7 +488,6 @@
   function normalizeUniversityItems(modules) {
     var map = {
       courses: "course",
-      professors: "professor",
       notes: "note",
       books: "book",
       resources: "resource",
@@ -439,7 +517,6 @@
     var kindLabels = {
       "": "همه",
       "course": "درس",
-      "professor": "استاد",
       "note": "ا݂ور",
       "book": "کتاب",
       "resource": "منبع",
@@ -448,7 +525,7 @@
       "summary": "خلاصه",
       "exam-tip": "راهنمایی امتحان"
     };
-    var kinds = ["", "course", "professor", "note", "book", "resource", "video", "sample-question", "summary", "exam-tip"];
+    var kinds = ["", "course", "note", "book", "resource", "video", "sample-question", "summary", "exam-tip"];
     el("uniKindFilter").innerHTML = kinds.map(function (kind) {
       var label = kindLabels[kind];
       return "<option value='" + kind + "'>" + label + "</option>";
@@ -1071,6 +1148,33 @@
     window.alert(textLog || "هیچ پیامی وجود ندارد.");
   }
   function bindStaticActions() {
+    var backBtn = el("miniBackBtn");
+    if (!backBtn) {
+      var actions = document.querySelector(".mini-actions");
+      if (actions) {
+        backBtn = document.createElement("button");
+        backBtn.id = "miniBackBtn";
+        backBtn.className = "btn ghost";
+        backBtn.type = "button";
+        backBtn.textContent = "Back";
+        actions.insertBefore(backBtn, actions.firstChild || null);
+      }
+    }
+
+    if (backBtn) {
+      backBtn.addEventListener("click", function () {
+        goBackTab();
+      });
+    }
+
+    if (state.tg && state.tg.BackButton) {
+      try {
+        state.tg.BackButton.onClick(function () {
+          goBackTab();
+        });
+      } catch (_error) {}
+    }
+
     el("miniRefreshAllBtn").addEventListener("click", function () {
       if (state.activeTab === "dashboard") loadDashboard().catch(onError);
       if (state.activeTab === "university") loadUniversity().catch(onError);
@@ -1296,9 +1400,9 @@
     ].join("");
 
     el("submissionForm").innerHTML = [
-      "<div class='form-row'><label for='subKind' style='text-align: right;'>نوع محتوا</label><select id='subKind'><option value='note'>جزوه</option><option value='book'>کتاب</option><option value='resource'>منبع</option><option value='video'>ویدیو</option><option value='summary'>خلاصه</option><option value='sample-question'>نمونه پرسش</option><option value='exam-tip'>راهنمایی امتحان</option><option value='course'>درس</option><option value='professor'>استاد</option></select></div>",
+      "<div class='form-row'><label for='subKind' style='text-align: right;'>نوع محتوا</label><select id='subKind'><option value='note'>جزوه</option><option value='book'>کتاب</option><option value='resource'>منبع</option><option value='video'>ویدیو</option><option value='summary'>خلاصه</option><option value='sample-question'>نمونه پرسش</option><option value='exam-tip'>راهنمایی امتحان</option><option value='course'>درس</option></select></div>",
       field("نام درس", "subCourseName", ""),
-      field("نام استاد", "subProfessorName", ""),
+      field("Target Term (1-12)", "subTerm", (state.profile && state.profile.term) || ""),
       field("عنوان", "subTitle", ""),
       field("مقصد", "subPurpose", ""),
       field("برچسب‌ها", "subTags", ""),
@@ -1410,11 +1514,18 @@
     el("supportLoadBtn").addEventListener("click", function () { loadSupportTickets().catch(onError); });
 
     el("submissionSendBtn").addEventListener("click", function () {
+      var termRaw = String(el("subTerm").value || "").trim();
+      var termNumber = Number(termRaw);
+      if (!Number.isInteger(termNumber) || termNumber < 1 || termNumber > 12) {
+        toast("ترم محتوا باید بین 1 تا 12 باشد", "warn");
+        return;
+      }
+
       var form = new FormData();
       form.append("userId", String(ensureUser()));
       form.append("contentKind", el("subKind").value);
       form.append("courseName", el("subCourseName").value);
-      form.append("professorName", el("subProfessorName").value);
+      form.append("term", String(termNumber));
       form.append("title", el("subTitle").value);
       form.append("purpose", el("subPurpose").value);
       form.append("tags", el("subTags").value);
@@ -1544,6 +1655,9 @@
 
     state.user = session.user || null;
     state.profile = session.profile || null;
+    state.profileCompletion = getProfileCompletion(state.profile, session.profileCompletion);
+    state.profileComplete = Boolean(state.profileCompletion.completed);
+    refreshNavLocks();
     var userTag = tgUser.username ? "@" + tgUser.username : "tg:" + tgUser.id;
     el("miniUserLabel").textContent =
       userTag + " | \u06a9\u0627\u0631\u0628\u0631 #" + Number((state.user || {}).id || 0).toLocaleString();
@@ -1556,8 +1670,12 @@
       buildForms();
       buildProfileForm();
       bindStaticActions();
-      setTab("dashboard");
-      toast("\u0645\u06cc\u0646\u06cc\u200c\u0627\u067e \u0622\u0645\u0627\u062f\u0647 \u0627\u0633\u062a", "ok");
+      setTab(state.profileComplete ? "dashboard" : "profile");
+      if (!state.profileComplete) {
+        toast("برای استفاده از همه بخش ها، ابتدا پروفایل را کامل کنید", "warn");
+      } else {
+        toast("\u0645\u06cc\u0646\u06cc\u200c\u0627\u067e \u0622\u0645\u0627\u062f\u0647 \u0627\u0633\u062a", "ok");
+      }
     } catch (error) {
       onError(error);
       el("miniUserLabel").textContent = error.message || "\u0627\u062c\u0631\u0627\u06cc \u0645\u06cc\u0646\u06cc\u200c\u0627\u067e \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f";

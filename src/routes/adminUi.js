@@ -4,7 +4,7 @@ const { config } = require("../config");
 
 const router = express.Router();
 const assetsDir = path.join(__dirname, "..", "admin-ui", "assets");
-const assetVersion = "20260219-12";
+const assetVersion = "20260219-13";
 
 function escapeAttr(value) {
   return String(value || "")

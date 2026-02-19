@@ -69,6 +69,40 @@ function toBoolean(raw, fallback = false) {
   return fallback;
 }
 
+function getProfileCompletion(profileRow) {
+  const row = profileRow || {};
+  const missingFields = [];
+
+  if (!toNullableString(row.university)) missingFields.push("university");
+  if (!toNullableString(row.major)) missingFields.push("major");
+  if (!toNullableString(row.level)) missingFields.push("level");
+  if (!toNullableString(row.term)) missingFields.push("term");
+  if (!toNullableString(row.skill_level)) missingFields.push("skill_level");
+  if (!toNullableString(row.short_term_goal)) missingFields.push("short_term_goal");
+
+  const weeklyHours = Number(row.weekly_hours || 0);
+  if (!Number.isFinite(weeklyHours) || weeklyHours < 1) missingFields.push("weekly_hours");
+
+  return {
+    completed: missingFields.length === 0,
+    missingFields
+  };
+}
+
+async function loadUserProfileForCompletion(userId) {
+  const profileRes = await query(
+    `SELECT university, major, level, term, skill_level, short_term_goal, weekly_hours
+     FROM user_profiles
+     WHERE user_id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  const profile = profileRes.rows[0] || null;
+  const completion = getProfileCompletion(profile);
+  return { profile, completion };
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -248,7 +282,6 @@ async function getUserWithProfile(userId) {
 function groupUniversityItems(items) {
   const grouped = {
     courses: [],
-    professors: [],
     notes: [],
     books: [],
     videos: [],
@@ -260,7 +293,6 @@ function groupUniversityItems(items) {
 
   for (const item of items) {
     if (item.kind === "course") grouped.courses.push(item);
-    else if (item.kind === "professor") grouped.professors.push(item);
     else if (item.kind === "note") grouped.notes.push(item);
     else if (item.kind === "book") grouped.books.push(item);
     else if (item.kind === "video") grouped.videos.push(item);
@@ -328,7 +360,8 @@ router.post("/session", async (req, res, next) => {
     });
 
     const profile = await getUserWithProfile(user.id);
-    res.json({ user, profile });
+    const profileCompletion = getProfileCompletion(profile);
+    res.json({ user, profile, profileCompletion });
   } catch (error) {
     next(error);
   }
@@ -341,6 +374,7 @@ router.get("/dashboard/:userId", async (req, res, next) => {
 
     const profile = await getUserWithProfile(userId);
     if (!profile) return res.status(404).json({ error: "User not found" });
+    const profileCompletion = getProfileCompletion(profile);
 
     const [supportRes, submissionsRes, appsRes, projectsRes, tasksRes, goalsRes, eventsRes] = await Promise.all([
       query(`SELECT status, COUNT(*) AS total FROM support_tickets WHERE user_id = $1 GROUP BY status`, [userId]),
@@ -362,6 +396,7 @@ router.get("/dashboard/:userId", async (req, res, next) => {
     res.json({
       userId,
       profile,
+      profileCompletion,
       counters: {
         support: supportRes.rows.map((row) => ({ ...row, total: Number(row.total || 0) })),
         submissions: submissionsRes.rows.map((row) => ({ ...row, total: Number(row.total || 0) })),
@@ -402,15 +437,15 @@ router.get("/university/my/:userId", async (req, res, next) => {
     const userId = Number(req.params.userId);
     if (!userId) return res.status(400).json({ error: "Invalid userId" });
 
-    const profileRes = await query(
-      `SELECT major, term
-       FROM user_profiles
-       WHERE user_id = $1
-       LIMIT 1`,
-      [userId]
-    );
-    const major = profileRes.rows[0]?.major || null;
-    const term = profileRes.rows[0]?.term || null;
+    const { profile, completion } = await loadUserProfileForCompletion(userId);
+    if (!profile || !completion.completed) {
+      return res.status(428).json({
+        error: "Complete profile first",
+        profileCompletion: completion
+      });
+    }
+    const major = profile.major || null;
+    const term = profile.term || null;
 
     const rows = await query(
       `SELECT c.id, c.title, c.description, c.kind, c.major, c.term, c.tags, c.created_at,
@@ -424,6 +459,7 @@ router.get("/university/my/:userId", async (req, res, next) => {
        FROM contents c
        WHERE c.type = 'university'
          AND c.is_published = TRUE
+         AND c.kind <> 'professor'
          AND ($1::text IS NULL OR c.major = $1 OR c.major IS NULL)
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
@@ -440,7 +476,6 @@ router.get("/university/my/:userId", async (req, res, next) => {
       term,
       summary: {
         courses: modules.courses.length,
-        professors: modules.professors.length,
         notes: modules.notes.length,
         books: modules.books.length,
         resources: modules.resources.length,
@@ -800,16 +835,28 @@ router.post("/submissions/university", upload.single("file"), async (req, res, n
     const contentKind = toNullableString(req.body?.contentKind);
     const title = toNullableString(req.body?.title);
     const courseName = toNullableString(req.body?.courseName);
-    const professorName = toNullableString(req.body?.professorName);
     const purpose = toNullableString(req.body?.purpose);
     if (!userId || !contentKind || !title || !purpose) return res.status(400).json({ error: "userId, contentKind, title and purpose are required" });
 
-    const allowedKinds = new Set(["course", "professor", "note", "book", "resource", "video", "sample-question", "summary", "exam-tip"]);
+    const allowedKinds = new Set(["course", "note", "book", "resource", "video", "sample-question", "summary", "exam-tip"]);
     if (!allowedKinds.has(contentKind)) return res.status(400).json({ error: "Unsupported contentKind" });
 
-    const profileRes = await query(`SELECT major, term FROM user_profiles WHERE user_id = $1 LIMIT 1`, [userId]);
-    const major = toNullableString(req.body?.major) || profileRes.rows[0]?.major || null;
-    const term = toNullableString(req.body?.term) || profileRes.rows[0]?.term || null;
+    const { profile, completion } = await loadUserProfileForCompletion(userId);
+    if (!profile || !completion.completed) {
+      return res.status(428).json({
+        error: "Complete profile first",
+        profileCompletion: completion
+      });
+    }
+
+    const major = toNullableString(req.body?.major) || profile.major || null;
+    const term = toNullableString(req.body?.term);
+    if (!term) return res.status(400).json({ error: "term is required for university submission" });
+    const termNumber = Number(term);
+    if (!Number.isInteger(termNumber) || termNumber < 1 || termNumber > 12) {
+      return res.status(400).json({ error: "term must be a number between 1 and 12" });
+    }
+    const normalizedTerm = String(termNumber);
 
     let driveFileId = null;
     let driveMime = null;
@@ -824,7 +871,7 @@ router.post("/submissions/university", upload.single("file"), async (req, res, n
         mimeType,
         contentType: "university",
         contentKind,
-        folderPathSegments: [contentKind, major || "unknown-major", `term-${term || "unknown"}`, `user-${userId}`],
+        folderPathSegments: [contentKind, major || "unknown-major", `term-${normalizedTerm}`, `user-${userId}`],
         makePublic: true
       });
       driveFileId = uploaded.fileId;
@@ -835,7 +882,7 @@ router.post("/submissions/university", upload.single("file"), async (req, res, n
     const description = [
       `بخش مقصد: ${contentKind}`,
       `درس مرتبط: ${courseName || "ثبت نشده"}`,
-      `استاد مرتبط: ${professorName || "ثبت نشده"}`,
+      `ترم هدف: ${normalizedTerm}`,
       `هدف: ${purpose}`
     ].join("\n\n");
 
@@ -850,7 +897,7 @@ router.post("/submissions/university", upload.single("file"), async (req, res, n
        (user_id, section, content_kind, title, description, major, term, tags, external_link, status)
        VALUES ($1, 'university', $2, $3, $4, $5, $6, $7::jsonb, $8, 'pending')
        RETURNING *`,
-      [userId, contentKind, title, description, major, term, JSON.stringify(tags), driveLink]
+      [userId, contentKind, title, description, major, normalizedTerm, JSON.stringify(tags), driveLink]
     );
 
     await query(
@@ -897,6 +944,14 @@ router.get("/industry/workspace/:userId", async (req, res, next) => {
   try {
     const userId = Number(req.params.userId);
     if (!userId) return res.status(400).json({ error: "Invalid userId" });
+
+    const { completion } = await loadUserProfileForCompletion(userId);
+    if (!completion.completed) {
+      return res.status(428).json({
+        error: "Complete profile first",
+        profileCompletion: completion
+      });
+    }
 
     const rows = await query(
       `SELECT sp.*, p.title AS project_title, p.level, p.estimated_hours

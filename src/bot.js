@@ -150,7 +150,7 @@ const MAJOR_NEXT_PAGE = "بعدی ➡️";
 const MAJOR_PAGE_SIZE = 4;
 const UNI_MENU_BACK = "🔙 بازگشت به منوی اصلی";
 const UNI_MENU = [
-  ["📘 دروس دانشگاه", "👨‍🏫 اساتید دانشگاه"],
+  ["📘 دروس دانشگاه"],
   ["📝 جزوه های دانشگاه", "📚 کتاب های دانشگاه"],
   ["🔎 منابع دانشگاه", "🎯 نکات امتحان دانشگاه"],
   ["📤 ارسال محتوای دانشگاه"],
@@ -210,7 +210,7 @@ const PATH_ARTIFACT_TYPE_OPTIONS = [
 const PROFILE_STEPS = [
   { key: "fullName", section: "پایه", question: "لطفا نام و نام خانوادگی خود را وارد کنید.", required: true },
   { key: "phoneOrEmail", section: "پایه", question: "لطفا شماره تماس یا ایمیل خود را وارد کنید.", required: true },
-  { key: "university", section: "تحصیل", question: "نام دانشگاه خود را وارد کنید. (اختیاری)", required: false },
+  { key: "university", section: "تحصیل", question: "نام دانشگاه خود را وارد کنید.", required: true },
   { key: "city", section: "تحصیل", question: "شهر محل تحصیل را وارد کنید. (اختیاری)", required: false },
   { key: "majorFamily", section: "تحصیل", question: "لطفا حوزه اصلی رشته خود را انتخاب کنید.", required: true },
   { key: "major", section: "تحصیل", question: "لطفا گرایش خود را انتخاب کنید.", required: true },
@@ -231,7 +231,6 @@ const UNIVERSITY_SUBMISSION_BACK = "❌ لغو ارسال محتوا";
 const UNIVERSITY_SUBMISSION_DONE = "✅ ثبت نهایی ارسال";
 const UNIVERSITY_SUBMISSION_KINDS = [
   { key: "course", label: "📘 دروس دانشگاه" },
-  { key: "professor", label: "👨‍🏫 اساتید دانشگاه" },
   { key: "note", label: "📝 جزوه های دانشگاه" },
   { key: "book", label: "📚 کتاب های دانشگاه" },
   { key: "resource", label: "🔎 منابع دانشگاه" },
@@ -248,8 +247,8 @@ const UNIVERSITY_SUBMISSION_STEPS = [
     question: "این محتوا برای کدام درس است؟ (مثلا: ساختمان داده)"
   },
   {
-    key: "professorName",
-    question: "این محتوا برای کدام استاد است؟ (اختیاری - برای رد: «رد»)"
+    key: "targetTerm",
+    question: "این محتوا برای کدام ترم است؟ (عدد 1 تا 12)"
   },
   {
     key: "title",
@@ -579,14 +578,22 @@ function getSessionKey(ctx) {
 async function loadUserAcademicProfile(ctx) {
   const userId = await ensureUser(ctx);
   const profileRes = await query(
-    `SELECT p.major, p.term FROM user_profiles p WHERE p.user_id = $1 LIMIT 1`,
+    `SELECT p.university, p.major, p.term FROM user_profiles p WHERE p.user_id = $1 LIMIT 1`,
     [userId]
   );
 
+  const university = profileRes.rows[0]?.university || null;
   const major = profileRes.rows[0]?.major || null;
   const term = profileRes.rows[0]?.term || null;
+  const profileComplete = Boolean(String(university || "").trim() && String(major || "").trim() && String(term || "").trim());
 
-  return { userId, major, term };
+  return {
+    userId,
+    university,
+    major: profileComplete ? major : null,
+    term: profileComplete ? term : null,
+    profileComplete
+  };
 }
 
 async function getUniversityItemsByKind({ major, term, kind, limit = 5 }) {
@@ -1114,7 +1121,6 @@ function getSubmissionKindByKeyword(label) {
     .toLowerCase();
 
   if (normalized.includes("درس")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "course") || null;
-  if (normalized.includes("استاد")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "professor") || null;
   if (normalized.includes("جزوه")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "note") || null;
   if (normalized.includes("کتاب")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "book") || null;
   if (normalized.includes("منبع")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "resource") || null;
@@ -1151,7 +1157,7 @@ async function askSubmissionStep(ctx, session) {
       `${step.question}\n\n` +
       `نوع: ${session.answers.contentKindLabel}\n` +
       `درس مرتبط: ${session.answers.courseName || "ثبت نشده"}\n` +
-      `استاد مرتبط: ${session.answers.professorName || "ثبت نشده"}\n` +
+      `ترم هدف: ${session.answers.targetTerm || "-"}\n` +
       `عنوان: ${session.answers.title}\n` +
       `هدف: ${session.answers.purpose}\n` +
       `فایل: ${session.answers.fileName || "ثبت نشده"}`,
@@ -1160,7 +1166,7 @@ async function askSubmissionStep(ctx, session) {
     return;
   }
 
-  if (step.key === "professorName" || step.key === "tags") {
+  if (step.key === "tags") {
     await ctx.reply(step.question, submissionSimpleKeyboard());
     return;
   }
@@ -1177,7 +1183,7 @@ async function startUniversitySubmissionWizard(ctx) {
   const userId = await ensureUser(ctx);
   const key = getSessionKey(ctx);
   const profileRes = await query(
-    `SELECT u.full_name, p.major, p.term
+    `SELECT u.full_name, p.university, p.major, p.term
      FROM users u
      LEFT JOIN user_profiles p ON p.user_id = u.id
      WHERE u.id = $1
@@ -1185,6 +1191,10 @@ async function startUniversitySubmissionWizard(ctx) {
     [userId]
   );
   const profile = profileRes.rows[0] || {};
+  if (!String(profile.university || "").trim() || !String(profile.major || "").trim() || !String(profile.term || "").trim()) {
+    await ctx.reply("قبل از ارسال محتوا، ابتدا پروفایل را کامل کن.", mainMenuForContext(ctx));
+    return;
+  }
 
   submissionSessions.set(key, {
     userId,
@@ -1206,7 +1216,7 @@ async function startUniversitySubmissionWizard(ctx) {
 
 function parseSubmissionStepValue(step, text) {
   const raw = String(text || "").trim();
-  if (!raw && !["professorName", "tags"].includes(step.key)) {
+  if (!raw && !["tags"].includes(step.key)) {
     return { ok: false, message: "این فیلد الزامی است." };
   }
 
@@ -1221,10 +1231,12 @@ function parseSubmissionStepValue(step, text) {
     return { ok: true, value: raw };
   }
 
-  if (step.key === "professorName") {
-    if (isSkipText(raw)) return { ok: true, value: null };
-    if (raw.length < 2) return { ok: false, message: "نام استاد معتبر وارد کن یا بزن: رد" };
-    return { ok: true, value: raw };
+  if (step.key === "targetTerm") {
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 12) {
+      return { ok: false, message: "ترم باید عدد بین 1 تا 12 باشد." };
+    }
+    return { ok: true, value: String(parsed) };
   }
 
   if (step.key === "title") {
@@ -1254,19 +1266,22 @@ function parseSubmissionStepValue(step, text) {
 
 async function saveUniversitySubmission(session) {
   const profileRes = await query(
-    `SELECT major, term
+    `SELECT major
      FROM user_profiles
      WHERE user_id = $1
      LIMIT 1`,
     [session.userId]
   );
   const major = profileRes.rows[0]?.major || null;
-  const term = profileRes.rows[0]?.term || null;
+  const term = String(session.answers.targetTerm || "").trim() || null;
+  if (!term) {
+    throw new Error("Target term is required for submission");
+  }
 
   const composedDescription = [
     `بخش مقصد: ${session.answers.contentKindLabel}`,
     `درس مرتبط: ${session.answers.courseName || "ثبت نشده"}`,
-    `استاد مرتبط: ${session.answers.professorName || "ثبت نشده"}`,
+    `ترم هدف: ${term || "-"}`,
     `هدف: ${session.answers.purpose}`
   ].join("\n\n");
 
@@ -1683,7 +1698,13 @@ async function handleSupportPanelInput(ctx) {
   const text = String(ctx.message?.text || "").trim();
   if (!text) return false;
 
-  if (text === "لغو" || text === SUPPORT_MENU_BACK) {
+  if (text === SUPPORT_MENU_BACK) {
+    supportActionSessions.delete(key);
+    await ctx.reply("از پنل پشتیبانی خارج شدی.", mainMenuForContext(ctx));
+    return true;
+  }
+
+  if (text === "لغو") {
     supportActionSessions.delete(key);
     await ctx.reply("عملیات تیکت لغو شد.", supportMenu(ctx));
     return true;
@@ -1911,6 +1932,12 @@ async function handleSupportTicketInput(ctx) {
   if (!session) return false;
 
   const text = String(ctx.message?.text || "").trim();
+  if (text === SUPPORT_MENU_BACK) {
+    supportTicketSessions.delete(key);
+    await ctx.reply("از پنل پشتیبانی خارج شدی.", mainMenuForContext(ctx));
+    return true;
+  }
+
   if (text === "لغو") {
     supportTicketSessions.delete(key);
     await ctx.reply("درخواست پشتیبانی لغو شد.", supportMenu(ctx));
@@ -4561,8 +4588,6 @@ const menuLabelAliases = new Map([
   [LABEL_ADMIN_PANEL, "پنل ادمین"],
   ["📘 دروس دانشگاه", "دروس دانشگاه"],
   ["دروس دانشگاه", "📘 دروس دانشگاه"],
-  ["👨‍🏫 اساتید دانشگاه", "اساتید دانشگاه"],
-  ["اساتید دانشگاه", "👨‍🏫 اساتید دانشگاه"],
   ["📝 جزوه های دانشگاه", "جزوه های دانشگاه"],
   ["جزوه های دانشگاه", "📝 جزوه های دانشگاه"],
   ["📚 کتاب های دانشگاه", "کتاب های دانشگاه"],
@@ -4747,7 +4772,6 @@ async function handleProfileWizardInput(ctx) {
     "صنعت",
     "مسیر من",
     "دروس دانشگاه",
-    "اساتید دانشگاه",
     "جزوه های دانشگاه",
     "کتاب های دانشگاه",
     "منابع دانشگاه",
@@ -5060,11 +5084,17 @@ function registerHandlers(bot) {
 
   bot.start(async (ctx) => {
     await ensureUser(ctx);
+    const profileState = await loadUserAcademicProfile(ctx);
 
-    await ctx.reply(
-      "👋 به فنجو خوش اومدی.\n✅ منوی اصلی فعال شد.",
-      mainMenuForContext(ctx)
-    );
+    if (!profileState.profileComplete) {
+      await ctx.reply(
+        "👋 ثبت نام اولیه انجام شد.\nقبل از استفاده از بخش ها، لطفا «تکمیل پروفایل» را کامل کن.",
+        mainMenuForContext(ctx)
+      );
+      return;
+    }
+
+    await ctx.reply("👋 به فنجو خوش اومدی.\n✅ منوی اصلی فعال شد.", mainMenuForContext(ctx));
   });
 
   bot.hears("شروع", async (ctx) => {
@@ -5098,10 +5128,6 @@ function registerHandlers(bot) {
 
   bot.hears("دروس دانشگاه", async (ctx) => {
     await showUniversityKind(ctx, "course", "دروس دانشگاه");
-  });
-
-  bot.hears("اساتید دانشگاه", async (ctx) => {
-    await showUniversityKind(ctx, "professor", "اساتید دانشگاه");
   });
 
   bot.hears("جزوه های دانشگاه", async (ctx) => {

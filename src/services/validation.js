@@ -4,7 +4,6 @@ const skillLevelEnum = z.enum(["beginner", "intermediate", "advanced"]);
 const contentTypeEnum = z.enum(["university", "industry"]);
 const contentKindEnum = z.enum([
   "course",
-  "professor",
   "resource",
   "note",
   "book",
@@ -26,7 +25,7 @@ const registerSchema = z.object({
 
 const profileSchema = z.object({
   userId: z.coerce.number().int().positive(),
-  university: z.string().optional(),
+  university: z.string().min(2),
   city: z.string().optional(),
   major: z.string().min(2),
   level: z.string().min(2),
