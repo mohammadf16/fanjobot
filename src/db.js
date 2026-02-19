@@ -51,12 +51,12 @@ function normalizeSqlitePath(rawPath) {
 }
 
 function getDbProvider() {
-  if (config.dbProvider === "postgres" || config.dbProvider === "sqlite") {
-    return config.dbProvider;
-  }
-
   if (isPostgresUrl(config.databaseUrl)) {
     return "postgres";
+  }
+
+  if (config.dbProvider === "postgres" || config.dbProvider === "sqlite") {
+    return config.dbProvider;
   }
 
   return "sqlite";

@@ -52,11 +52,15 @@ npm start
 2. Set all env vars from `.env.example`.
 3. Default DB is SQLite file (`db/fanjobo.db`) so no external DB service is required.
 4. If you need persistence across redeploy/restart on Railway, mount a persistent volume and set `SQLITE_PATH` to the mounted path.
-5. For Telegram webhook on Railway set:
+5. Recommended for production persistence: add a Railway PostgreSQL service and set:
+   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+   - `DB_PROVIDER=postgres`
+   - Optional: remove/ignore `SQLITE_PATH`
+6. For Telegram webhook on Railway set:
 - `TELEGRAM_USE_WEBHOOK=true`
 - `TELEGRAM_WEBHOOK_DOMAIN=https://<your-railway-domain>`
 - Optional: `TELEGRAM_WEBHOOK_PATH=/telegram/webhook/<secret-path>`
-6. Deploy. `railway.json` runs:
+7. Deploy. `railway.json` runs:
 - `npm run db:init && npm start`
 
 ## Telegram webhook mode
