@@ -78,6 +78,15 @@ router.get("/admin", (req, res) => {
     <div><h2 style="margin:0">Moderation</h2><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>ID</th><th>Section/Kind</th><th>Title</th><th>User</th><th>Action</th></tr></thead><tbody id="moderationBody"></tbody></table></div></div>
     <div><h2 style="margin:0">Operations</h2><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Item</th><th>Status</th><th>Action</th></tr></thead><tbody id="opsBody"></tbody></table></div></div>
   </section>
+
+  <section class="panel hidden secure">
+    <div class="row">
+      <h2 class="tight" style="margin:0">Temporary Drive Check</h2>
+      <input id="driveFolderInput" placeholder="Folder ID (optional, empty = DRIVE_ROOT_FOLDER_ID)" />
+      <button id="runDriveCheckBtn" class="tight">Run Read/Write Test</button>
+    </div>
+    <pre id="driveCheckOutput" class="status" style="margin-top:8px;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto">No test executed yet.</pre>
+  </section>
 </main>
 
 <script>
@@ -182,6 +191,21 @@ el("opsBody").addEventListener("click", function(event){
   request.then(function(){return Promise.all([loadOverview(), loadOps(), loadQuick()]);}).then(function(){showStatus("Operation completed");}).catch(function(e){showStatus(e.message,true);});
 });
 
+el("runDriveCheckBtn").addEventListener("click", function(){
+  var folderId = el("driveFolderInput").value.trim();
+  var body = folderId ? { folderId: folderId } : {};
+  el("driveCheckOutput").textContent = "Running drive read/write check...";
+  api("/api/admin/integrations/drive/check", {method:"POST", body: JSON.stringify(body)})
+    .then(function(data){
+      el("driveCheckOutput").textContent = JSON.stringify(data, null, 2);
+      showStatus("Drive check completed");
+    })
+    .catch(function(e){
+      el("driveCheckOutput").textContent = "ERROR: " + e.message;
+      showStatus(e.message, true);
+    });
+});
+
 el("adminIdInput").value = state.adminId || el("adminIdInput").value;
 if(state.adminKey){el("adminKeyInput").value = state.adminKey; login();}
 </script>
@@ -259,4 +283,3 @@ if(state.adminKey){loadLogs().catch(function(e){el("metaBox").textContent=e.mess
 });
 
 module.exports = router;
-

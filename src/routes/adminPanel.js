@@ -2,6 +2,7 @@ const express = require("express");
 const { query } = require("../db");
 const { config } = require("../config");
 const { getLogs } = require("../services/logger");
+const { testDriveReadWrite } = require("../services/googleDrive");
 
 const router = express.Router();
 
@@ -166,6 +167,21 @@ router.get("/logs", async (req, res, next) => {
     });
 
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/integrations/drive/check", async (req, res, next) => {
+  try {
+    const folderId = toNullableString(req.body?.folderId);
+    const result = await testDriveReadWrite({ folderId });
+
+    res.json({
+      ok: true,
+      message: "Drive read/write check passed.",
+      result
+    });
   } catch (error) {
     next(error);
   }

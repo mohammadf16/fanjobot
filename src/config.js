@@ -17,8 +17,16 @@ function toBool(value, defaultValue = false) {
 
 function normalizeId(value) {
   if (value === undefined || value === null) return value;
-  const normalized = String(value).trim();
-  return normalized || undefined;
+  const normalized = String(value).trim().replace(/^"+|"+$/g, "");
+  if (!normalized) return undefined;
+
+  const folderMatch = normalized.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch?.[1]) return folderMatch[1];
+
+  const idMatch = normalized.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idMatch?.[1]) return idMatch[1];
+
+  return normalized;
 }
 
 const config = {
@@ -34,6 +42,12 @@ const config = {
   telegramWebhookPath: process.env.TELEGRAM_WEBHOOK_PATH,
   driveRootFolderId: normalizeId(required("DRIVE_ROOT_FOLDER_ID")),
   driveUniversityFolderId: normalizeId(process.env.DRIVE_UNIVERSITY_FOLDER_ID),
+  driveUniversityCourseFolderId: normalizeId(process.env.DRIVE_UNIVERSITY_COURSE_FOLDER_ID),
+  driveUniversityProfessorFolderId: normalizeId(process.env.DRIVE_UNIVERSITY_PROFESSOR_FOLDER_ID),
+  driveUniversityNoteFolderId: normalizeId(process.env.DRIVE_UNIVERSITY_NOTE_FOLDER_ID),
+  driveUniversityBookFolderId: normalizeId(process.env.DRIVE_UNIVERSITY_BOOK_FOLDER_ID),
+  driveUniversityResourceFolderId: normalizeId(process.env.DRIVE_UNIVERSITY_RESOURCE_FOLDER_ID),
+  driveUniversityExamTipFolderId: normalizeId(process.env.DRIVE_UNIVERSITY_EXAM_TIP_FOLDER_ID),
   driveIndustryFolderId: normalizeId(process.env.DRIVE_INDUSTRY_FOLDER_ID),
   googleOauthClientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
   googleOauthClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,

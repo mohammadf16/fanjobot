@@ -12,7 +12,7 @@ router.post("/upload", upload.single("file"), async (req, res, next) => {
       return res.status(400).json({ error: "File is required" });
     }
 
-    const { contentId, contentType, makePublic } = req.body;
+    const { contentId, contentType, contentKind, makePublic } = req.body;
 
     if (!contentId || !contentType) {
       return res.status(400).json({ error: "contentId and contentType are required" });
@@ -23,6 +23,7 @@ router.post("/upload", upload.single("file"), async (req, res, next) => {
       fileName: req.file.originalname,
       mimeType: req.file.mimetype,
       contentType,
+      contentKind,
       makePublic: makePublic === "true"
     });
 

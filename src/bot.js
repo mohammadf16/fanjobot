@@ -736,6 +736,7 @@ async function handleSubmissionWizardMediaInput(ctx) {
       fileName: media.fileName,
       mimeType: media.mimeType,
       contentType: "university",
+      contentKind: session.answers.contentKind,
       makePublic: true
     });
 

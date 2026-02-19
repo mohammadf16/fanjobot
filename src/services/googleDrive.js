@@ -123,9 +123,26 @@ async function getDriveClient() {
   return driveClientPromise;
 }
 
-function resolveParentFolder(contentType) {
+function resolveUniversityFolderByKind(contentKind) {
+  const map = {
+    course: config.driveUniversityCourseFolderId,
+    professor: config.driveUniversityProfessorFolderId,
+    note: config.driveUniversityNoteFolderId,
+    book: config.driveUniversityBookFolderId,
+    resource: config.driveUniversityResourceFolderId,
+    "exam-tip": config.driveUniversityExamTipFolderId
+  };
+
+  return map[String(contentKind || "").trim()] || undefined;
+}
+
+function resolveParentFolder(contentType, contentKind) {
   if (contentType === "university" && config.driveUniversityFolderId) {
-    return config.driveUniversityFolderId;
+    return resolveUniversityFolderByKind(contentKind) || config.driveUniversityFolderId;
+  }
+
+  if (contentType === "university") {
+    return resolveUniversityFolderByKind(contentKind) || config.driveRootFolderId;
   }
 
   if (contentType === "industry" && config.driveIndustryFolderId) {
@@ -179,10 +196,11 @@ async function uploadBufferToDrive({
   fileName,
   mimeType,
   contentType,
+  contentKind,
   makePublic = false
 }) {
   const drive = await getDriveClient();
-  const parentFolderId = resolveParentFolder(contentType);
+  const parentFolderId = resolveParentFolder(contentType, contentKind);
   await ensureParentFolderAccessible(drive, parentFolderId);
 
   const createRes = await drive.files.create({
@@ -225,6 +243,59 @@ async function uploadBufferToDrive({
   };
 }
 
+async function testDriveReadWrite({ folderId }) {
+  const drive = await getDriveClient();
+  const targetFolderId = String(folderId || "").trim() || config.driveRootFolderId;
+
+  await ensureParentFolderAccessible(drive, targetFolderId);
+
+  const createdAt = new Date();
+  const testFileName = `fanjobo-drive-check-${createdAt.getTime()}.txt`;
+  const content = `drive-check:${createdAt.toISOString()}`;
+
+  const created = await drive.files.create({
+    requestBody: {
+      name: testFileName,
+      parents: [targetFolderId]
+    },
+    media: {
+      mimeType: "text/plain",
+      body: Readable.from(Buffer.from(content, "utf8"))
+    },
+    supportsAllDrives: true,
+    fields: "id,name,parents,createdTime"
+  });
+
+  const createdFileId = created?.data?.id;
+  if (!createdFileId) {
+    throw new Error("Drive write test failed: file id missing.");
+  }
+
+  let fetched;
+  try {
+    fetched = await drive.files.get({
+      fileId: createdFileId,
+      fields: "id,name,mimeType,size,parents,createdTime,modifiedTime",
+      supportsAllDrives: true
+    });
+  } finally {
+    try {
+      await drive.files.delete({
+        fileId: createdFileId,
+        supportsAllDrives: true
+      });
+    } catch (_cleanupError) {
+      // Ignore cleanup failure; test result should still include read/write status.
+    }
+  }
+
+  return {
+    folderId: targetFolderId,
+    file: fetched?.data || null
+  };
+}
+
 module.exports = {
-  uploadBufferToDrive
+  uploadBufferToDrive,
+  testDriveReadWrite
 };
