@@ -20,7 +20,10 @@ const jsonColumns = new Set([
   "junior_ready_checklist",
   "metadata",
   "filters",
-  "output_links"
+  "output_links",
+  "free_days",
+  "success_metrics",
+  "attachments"
 ]);
 const booleanColumns = new Set([
   "is_published",

@@ -14,6 +14,7 @@ const {
 
 const profileSessions = new Map();
 const submissionSessions = new Map();
+const pathSessions = new Map();
 
 const LABEL_START = "🚀 شروع";
 const LABEL_PROFILE = "🧾 تکمیل پروفایل";
@@ -98,6 +99,49 @@ const INDUSTRY_MENU = [
   ["🗺️ مسیر شغلی", "🎓 منابع صنعتی"],
   [UNI_MENU_BACK]
 ];
+const MY_PATH_MENU_BACK = "🔙 خروج از مسیر من";
+const MY_PATH_MENU = [
+  ["📍 خلاصه مسیر", "⚙️ آنبوردینگ مسیر"],
+  ["🎯 هدف های فعال", "📅 برنامه هفتگی"],
+  ["✅ تسک های من", "📈 پیشرفت من"],
+  ["🧾 خروجی ها", "💡 پیشنهادهای هفته"],
+  ["➕ هدف جدید", "➕ تسک جدید", "➕ خروجی جدید"],
+  [MY_PATH_MENU_BACK]
+];
+const PATH_STAGE_OPTIONS = [
+  "فقط دانشگاه",
+  "دانشگاه + صنعت",
+  "آماده مصاحبه",
+  "دنبال پروژه"
+];
+const PATH_MAIN_GOAL_OPTIONS = [
+  "نمره بهتر",
+  "پروژه رزومه ای",
+  "کارآموزی",
+  "یادگیری یک مهارت"
+];
+const PATH_FREE_DAY_OPTIONS = ["شنبه", "یکشنبه", "دوشنبه", "سه شنبه", "چهارشنبه", "پنجشنبه", "جمعه"];
+const PATH_SPLIT_OPTIONS = ["دانشگاه 70 / صنعت 30", "دانشگاه 50 / صنعت 50", "دانشگاه 30 / صنعت 70"];
+const PATH_GOAL_TYPE_OPTIONS = [
+  { label: "🎓 هدف دانشگاهی", value: "academic" },
+  { label: "🏭 هدف صنعتی", value: "career" },
+  { label: "🧪 هدف پروژه ای", value: "project" },
+  { label: "📨 هدف اپلای", value: "application" }
+];
+const PATH_TASK_TYPE_OPTIONS = [
+  { label: "📖 مطالعه", value: "study" },
+  { label: "🧠 تمرین", value: "practice" },
+  { label: "🛠️ پروژه", value: "project" },
+  { label: "📨 اپلای", value: "apply" },
+  { label: "🎤 مصاحبه", value: "interview" }
+];
+const PATH_ARTIFACT_TYPE_OPTIONS = [
+  { label: "🐙 GitHub", value: "github" },
+  { label: "🌐 Demo", value: "demo" },
+  { label: "📄 File", value: "file" },
+  { label: "🏅 Certificate", value: "certificate" },
+  { label: "🧷 Resume Bullet", value: "resume_bullet" }
+];
 
 const PROFILE_STEPS = [
   { key: "fullName", section: "پایه", question: "لطفا نام و نام خانوادگی خود را وارد کنید.", required: true },
@@ -179,6 +223,10 @@ function universityMenu() {
 
 function industryMenu() {
   return Markup.keyboard(INDUSTRY_MENU).resize();
+}
+
+function myPathMenu() {
+  return Markup.keyboard(MY_PATH_MENU).resize();
 }
 
 function buildWebhookPath() {
@@ -1681,6 +1729,755 @@ async function showIndustryLearningLibraryModule(ctx) {
   );
 }
 
+function pathWizardStepKeys(mode) {
+  if (mode === "onboarding") return ["currentStage", "fourWeekGoal", "weeklyHours", "freeDays", "split", "confirm"];
+  if (mode === "goal") return ["goalType", "goalTitle", "goalEndDate", "goalPriority", "goalMetrics", "confirm"];
+  if (mode === "task") return ["taskGoalId", "taskType", "taskTitle", "taskMinutes", "taskPriority", "taskDueDate", "confirm"];
+  if (mode === "artifact") return ["artifactType", "artifactGoalId", "artifactTitle", "artifactUrl", "artifactDescription", "confirm"];
+  return [];
+}
+
+function pathWizardQuestion(mode, stepKey) {
+  const questions = {
+    onboarding: {
+      currentStage: "الان در چه مرحله ای هستی؟",
+      fourWeekGoal: "هدف اصلی 4 هفته آینده را انتخاب کن:",
+      weeklyHours: "زمان آزاد هفتگی (ساعت) را وارد کن:",
+      freeDays: "روزهای آزاد را انتخاب کن (چندتایی) و بعد «ثبت روزهای آزاد» را بزن.",
+      split: "اولویت زمان بندی دانشگاه/صنعت را انتخاب کن:",
+      confirm: "برای ذخیره آنبوردینگ «ثبت نهایی مسیر» را بزن."
+    },
+    goal: {
+      goalType: "نوع هدف را انتخاب کن:",
+      goalTitle: "عنوان هدف را بنویس:",
+      goalEndDate: "ددلاین هدف را وارد کن (YYYY-MM-DD) یا «رد»:",
+      goalPriority: "اولویت هدف را انتخاب کن (1 مهم ترین):",
+      goalMetrics: "شاخص موفقیت (Metric) را بنویس. مثال: نمره 17+, 3 اپلای، پروژه کامل",
+      confirm: "برای ثبت هدف «ثبت نهایی مسیر» را بزن."
+    },
+    task: {
+      taskGoalId: "این تسک مربوط به کدام هدف است؟ شناسه هدف را وارد کن (یا «رد»):",
+      taskType: "نوع تسک را انتخاب کن:",
+      taskTitle: "عنوان تسک را بنویس:",
+      taskMinutes: "زمان تخمینی تسک (دقیقه) را وارد کن:",
+      taskPriority: "اولویت تسک را انتخاب کن (1 مهم ترین):",
+      taskDueDate: "ددلاین تسک (YYYY-MM-DD) یا «رد»:",
+      confirm: "برای ثبت تسک «ثبت نهایی مسیر» را بزن."
+    },
+    artifact: {
+      artifactType: "نوع خروجی را انتخاب کن:",
+      artifactGoalId: "شناسه هدف مرتبط (اختیاری - «رد»):",
+      artifactTitle: "عنوان خروجی را بنویس:",
+      artifactUrl: "لینک خروجی را وارد کن (اختیاری - «رد»):",
+      artifactDescription: "توضیح کوتاه خروجی را بنویس (اختیاری - «رد»):",
+      confirm: "برای ثبت خروجی «ثبت نهایی مسیر» را بزن."
+    }
+  };
+  return questions[mode]?.[stepKey] || "پاسخ را وارد کن:";
+}
+
+function parsePathSplit(raw) {
+  if (raw === "دانشگاه 70 / صنعت 30") return { universityWeight: 70, industryWeight: 30 };
+  if (raw === "دانشگاه 50 / صنعت 50") return { universityWeight: 50, industryWeight: 50 };
+  if (raw === "دانشگاه 30 / صنعت 70") return { universityWeight: 30, industryWeight: 70 };
+  return null;
+}
+
+function pathGoalTypeByLabel(raw) {
+  return PATH_GOAL_TYPE_OPTIONS.find((item) => item.label === raw) || null;
+}
+
+function pathTaskTypeByLabel(raw) {
+  return PATH_TASK_TYPE_OPTIONS.find((item) => item.label === raw) || null;
+}
+
+function pathArtifactTypeByLabel(raw) {
+  return PATH_ARTIFACT_TYPE_OPTIONS.find((item) => item.label === raw) || null;
+}
+
+function parseIsoDate(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return value;
+}
+
+function pathStepKeyboard(mode, stepKey, session) {
+  if (stepKey === "currentStage") {
+    return Markup.keyboard([...chunkOptions(PATH_STAGE_OPTIONS, 2), ["لغو"]]).resize();
+  }
+  if (stepKey === "fourWeekGoal") {
+    return Markup.keyboard([...chunkOptions(PATH_MAIN_GOAL_OPTIONS, 2), ["لغو"]]).resize();
+  }
+  if (stepKey === "freeDays") {
+    const selected = session.answers.freeDays || [];
+    const buttons = PATH_FREE_DAY_OPTIONS.map((day) => (selected.includes(day) ? `✅ ${day}` : day));
+    return Markup.keyboard([...chunkOptions(buttons, 3), ["ثبت روزهای آزاد"], ["لغو"]]).resize();
+  }
+  if (stepKey === "split") {
+    return Markup.keyboard([...chunkOptions(PATH_SPLIT_OPTIONS, 1), ["لغو"]]).resize();
+  }
+  if (stepKey === "goalType") {
+    return Markup.keyboard([...chunkOptions(PATH_GOAL_TYPE_OPTIONS.map((item) => item.label), 2), ["لغو"]]).resize();
+  }
+  if (stepKey === "taskType") {
+    return Markup.keyboard([...chunkOptions(PATH_TASK_TYPE_OPTIONS.map((item) => item.label), 2), ["لغو"]]).resize();
+  }
+  if (stepKey === "artifactType") {
+    return Markup.keyboard([...chunkOptions(PATH_ARTIFACT_TYPE_OPTIONS.map((item) => item.label), 2), ["لغو"]]).resize();
+  }
+  if (stepKey === "goalPriority" || stepKey === "taskPriority") {
+    return Markup.keyboard([["1", "2", "3"], ["4", "5"], ["لغو"]]).resize();
+  }
+  if (stepKey === "confirm") {
+    return Markup.keyboard([["ثبت نهایی مسیر"], ["لغو"]]).resize();
+  }
+  if (["goalEndDate", "taskGoalId", "taskDueDate", "artifactGoalId", "artifactUrl", "artifactDescription"].includes(stepKey)) {
+    return Markup.keyboard([["رد"], ["لغو"]]).resize();
+  }
+  return Markup.keyboard([["لغو"]]).resize();
+}
+
+async function askPathWizardStep(ctx, session) {
+  const steps = pathWizardStepKeys(session.mode);
+  const stepKey = steps[session.stepIndex];
+  if (!stepKey) return;
+  const question = pathWizardQuestion(session.mode, stepKey);
+  await ctx.reply(`(${session.stepIndex + 1}/${steps.length}) ${question}`, pathStepKeyboard(session.mode, stepKey, session));
+}
+
+async function startPathWizard(ctx, mode) {
+  const userId = await ensureUser(ctx);
+  const key = getSessionKey(ctx);
+  pathSessions.set(key, { userId, mode, stepIndex: 0, answers: {} });
+  await askPathWizardStep(ctx, pathSessions.get(key));
+}
+
+function formatGoalType(type) {
+  const map = {
+    academic: "دانشگاهی",
+    career: "صنعتی",
+    project: "پروژه ای",
+    application: "اپلای"
+  };
+  return map[type] || type || "نامشخص";
+}
+
+function formatTaskType(type) {
+  const map = {
+    study: "مطالعه",
+    practice: "تمرین",
+    project: "پروژه",
+    apply: "اپلای",
+    interview: "مصاحبه"
+  };
+  return map[type] || type || "نامشخص";
+}
+
+function calcStreakFromDates(dateValues) {
+  if (!Array.isArray(dateValues) || !dateValues.length) return 0;
+  const set = new Set(dateValues.map((item) => new Date(item).toISOString().slice(0, 10)));
+  let streak = 0;
+  const pointer = new Date();
+  while (true) {
+    const key = pointer.toISOString().slice(0, 10);
+    if (!set.has(key)) break;
+    streak += 1;
+    pointer.setUTCDate(pointer.getUTCDate() - 1);
+  }
+  return streak;
+}
+
+async function loadMyPathSnapshot(userId) {
+  const [profileRes, goalsRes, tasksRes, artifactsRes, progressRes, uniDeadlineRes, appDeadlineRes] = await Promise.all([
+    query(`SELECT * FROM my_path_profiles WHERE user_id = $1 LIMIT 1`, [userId]),
+    query(
+      `SELECT *
+       FROM my_path_goals
+       WHERE user_id = $1
+       ORDER BY CASE WHEN status = 'active' THEN 0 WHEN status = 'paused' THEN 1 ELSE 2 END, priority ASC, end_date ASC NULLS LAST, id DESC`,
+      [userId]
+    ),
+    query(
+      `SELECT *
+       FROM my_path_tasks
+       WHERE user_id = $1
+       ORDER BY CASE status WHEN 'todo' THEN 0 WHEN 'doing' THEN 1 ELSE 2 END, priority ASC, due_date ASC NULLS LAST, id DESC
+       LIMIT 80`,
+      [userId]
+    ),
+    query(`SELECT * FROM my_path_artifacts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20`, [userId]),
+    query(
+      `SELECT completed_at
+       FROM my_path_tasks
+       WHERE user_id = $1 AND status = 'done' AND completed_at IS NOT NULL
+       ORDER BY completed_at DESC
+       LIMIT 60`,
+      [userId]
+    ),
+    query(
+      `SELECT title, due_at
+       FROM university_deadlines
+       WHERE user_id = $1 AND status = 'open' AND due_at IS NOT NULL
+       ORDER BY due_at ASC
+       LIMIT 5`,
+      [userId]
+    ),
+    query(
+      `SELECT o.title, o.deadline_at AS due_at
+       FROM industry_applications a
+       JOIN industry_opportunities o ON o.id = a.opportunity_id
+       WHERE a.user_id = $1 AND o.deadline_at IS NOT NULL
+       ORDER BY o.deadline_at ASC
+       LIMIT 5`,
+      [userId]
+    )
+  ]);
+
+  const profile = profileRes.rows[0] || null;
+  const goals = goalsRes.rows;
+  const tasks = tasksRes.rows;
+  const artifacts = artifactsRes.rows;
+  const streak = calcStreakFromDates(progressRes.rows.map((item) => item.completed_at).filter(Boolean));
+  const deadlines = [
+    ...uniDeadlineRes.rows.map((row) => ({ ...row, source: "دانشگاه" })),
+    ...appDeadlineRes.rows.map((row) => ({ ...row, source: "صنعت" })),
+    ...tasks
+      .filter((item) => item.due_date && item.status !== "done")
+      .slice(0, 5)
+      .map((item) => ({ title: item.title, due_at: item.due_date, source: "تسک" }))
+  ]
+    .sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime())
+    .slice(0, 6);
+
+  const topTasks = tasks.filter((item) => item.status !== "done").slice(0, 3);
+  const doneCount = tasks.filter((item) => item.status === "done").length;
+  const doingCount = tasks.filter((item) => item.status === "doing").length;
+  const todoCount = tasks.filter((item) => item.status === "todo").length;
+  const completionRate = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
+
+  return {
+    profile,
+    goals,
+    tasks,
+    artifacts,
+    streak,
+    deadlines,
+    topTasks,
+    doneCount,
+    doingCount,
+    todoCount,
+    completionRate
+  };
+}
+
+function buildBridgeSuggestions(goals) {
+  if (!goals.length) return ["یک هدف دانشگاهی + یک هدف صنعتی تعریف کن تا پیشنهاد پل زن فعال شود."];
+  const suggestions = [];
+  for (const goal of goals.slice(0, 4)) {
+    const title = String(goal.title || "").toLowerCase();
+    if (goal.type === "academic") {
+      if (title.includes("دیتابیس") || title.includes("database")) {
+        suggestions.push("درس دیتابیس ↔ پروژه رزومه ای: طراحی DB + API برای Task Manager");
+      } else if (title.includes("شبکه") || title.includes("سیستم عامل")) {
+        suggestions.push("درس شبکه/سیستم عامل ↔ پروژه رزومه ای: سرویس مانیتورینگ ساده");
+      } else {
+        suggestions.push(`از هدف دانشگاهی «${goal.title}» یک mini-project صنعتی 1 هفته ای استخراج کن.`);
+      }
+    }
+    if (goal.type === "career") {
+      if (title.includes("backend")) suggestions.push("هدف Backend ↔ مرور دانشگاهی: دیتابیس، سیستم عامل، شبکه.");
+      else suggestions.push(`برای هدف صنعتی «${goal.title}» یک منبع دانشگاهی مکمل انتخاب کن.`);
+    }
+  }
+  return suggestions.slice(0, 5);
+}
+
+async function showMyPathHub(ctx) {
+  const userId = await ensureUser(ctx);
+  const snapshot = await loadMyPathSnapshot(userId);
+  const { profile, goals, topTasks, deadlines, completionRate, streak, artifacts } = snapshot;
+
+  const topTaskText = topTasks.length
+    ? topTasks.map((item, idx) => `${idx + 1}. [#${item.id}] ${item.title} (${formatTaskType(item.type)})`).join("\n")
+    : "1. هنوز تسکی تعریف نشده.";
+  const deadlinesText = deadlines.length
+    ? deadlines.map((item, idx) => `${idx + 1}. ${item.title} | ${item.source} | ${toFaDate(item.due_at)}`).join("\n")
+    : "ددلاین نزدیکی ثبت نشده.";
+  const goalsText = goals.length
+    ? goals
+        .filter((item) => item.status === "active")
+        .slice(0, 3)
+        .map((item) => `- ${formatGoalType(item.type)}: ${item.title}`)
+        .join("\n")
+    : "- هدف فعالی ثبت نشده.";
+  const artifactsText = artifacts.length
+    ? artifacts.slice(0, 3).map((item) => `- ${item.title} (${item.type})`).join("\n")
+    : "- خروجی رزومه ای ثبت نشده.";
+
+  const splitText = profile
+    ? `دانشگاه ${profile.university_weight}% | صنعت ${profile.industry_weight}%`
+    : "تنظیم نشده";
+  const smartSuggestion = buildBridgeSuggestions(goals)[0];
+
+  await ctx.reply(
+    `🧭 مسیر من | Goal → Plan → Action → Progress → Proof\n\n` +
+      `A) امروز/این هفته\n` +
+      `Top 3:\n${topTaskText}\n\n` +
+      `ددلاین های نزدیک:\n${deadlinesText}\n\n` +
+      `💡 پیشنهاد هوشمند: ${smartSuggestion}\n\n` +
+      `B) هدف های فعال\n${goalsText}\n\n` +
+      `C) نقشه مسیر\n` +
+      `1) پایه ها\n2) تمرین + پروژه کوچک\n3) پروژه رزومه ای\n4) اپلای + مصاحبه\n\n` +
+      `D) برنامه هفتگی\n` +
+      `ساعت آزاد: ${profile?.weekly_hours || 0}h | تقسیم: ${splitText}\n\n` +
+      `E) پیشرفت\n` +
+      `Completion: ${completionRate}% | Streak: ${streak} روز\n\n` +
+      `F) خروجی ها\n${artifactsText}`,
+    myPathMenu()
+  );
+}
+
+async function showMyPathGoals(ctx) {
+  const userId = await ensureUser(ctx);
+  const goalsRes = await query(
+    `SELECT id, type, title, priority, status, end_date, progress_percent
+     FROM my_path_goals
+     WHERE user_id = $1
+     ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, priority ASC, end_date ASC NULLS LAST, id DESC
+     LIMIT 30`,
+    [userId]
+  );
+  const text = goalsRes.rows.length
+    ? goalsRes.rows
+        .map(
+          (g) =>
+            `#${g.id} | ${formatGoalType(g.type)} | ${g.title}\n` +
+            `اولویت: ${g.priority} | وضعیت: ${g.status} | ددلاین: ${toFaDate(g.end_date)} | پیشرفت: ${g.progress_percent}%`
+        )
+        .join("\n\n")
+    : "هدفی ثبت نشده. از «➕ هدف جدید» شروع کن.";
+  await ctx.reply(`🎯 هدف های فعال\n\n${text}`, myPathMenu());
+}
+
+async function showMyPathWeeklyPlan(ctx) {
+  const userId = await ensureUser(ctx);
+  const [profileRes, tasksRes] = await Promise.all([
+    query(`SELECT weekly_hours, free_days, university_weight, industry_weight FROM my_path_profiles WHERE user_id = $1 LIMIT 1`, [userId]),
+    query(
+      `SELECT id, title, type, estimated_minutes, status
+       FROM my_path_tasks
+       WHERE user_id = $1 AND status IN ('todo', 'doing')
+       ORDER BY priority ASC, due_date ASC NULLS LAST
+       LIMIT 12`,
+      [userId]
+    )
+  ]);
+  const profile = profileRes.rows[0] || null;
+  const blocks = tasksRes.rows
+    .slice(0, 6)
+    .map((task, idx) => `${idx + 1}. [#${task.id}] ${task.title} (${Math.ceil((task.estimated_minutes || 60) / 60)}h)`)
+    .join("\n");
+  await ctx.reply(
+    `📅 برنامه هفتگی\n` +
+      `زمان آزاد: ${profile?.weekly_hours || 0}h\n` +
+      `روزهای آزاد: ${(profile?.free_days || []).join("، ") || "ثبت نشده"}\n` +
+      `تقسیم: دانشگاه ${profile?.university_weight || 50}% | صنعت ${profile?.industry_weight || 50}%\n\n` +
+      `بلوک های پیشنهادی:\n${blocks || "تسکی برای برنامه ریزی ثبت نشده."}`,
+    myPathMenu()
+  );
+}
+
+async function showMyPathTasks(ctx) {
+  const userId = await ensureUser(ctx);
+  const tasksRes = await query(
+    `SELECT id, title, type, status, priority, due_date
+     FROM my_path_tasks
+     WHERE user_id = $1
+     ORDER BY CASE status WHEN 'todo' THEN 0 WHEN 'doing' THEN 1 ELSE 2 END, priority ASC, due_date ASC NULLS LAST
+     LIMIT 40`,
+    [userId]
+  );
+  const text = tasksRes.rows.length
+    ? tasksRes.rows
+        .map((task) => `#${task.id} | ${task.title}\n${formatTaskType(task.type)} | ${task.status} | P${task.priority} | ${toFaDate(task.due_date)}`)
+        .join("\n\n")
+    : "تسکی ثبت نشده.";
+  await ctx.reply(
+    `✅ تسک های من\n\n${text}\n\nفرمان سریع:\nشروع تسک <id>\nانجام تسک <id>`,
+    myPathMenu()
+  );
+}
+
+async function showMyPathProgress(ctx) {
+  const userId = await ensureUser(ctx);
+  const snapshot = await loadMyPathSnapshot(userId);
+  const weakAreas = snapshot.tasks
+    .filter((item) => item.status !== "done" && item.priority <= 2)
+    .slice(0, 3)
+    .map((item) => `- ${item.title}`)
+    .join("\n");
+  const riskAlert = snapshot.completionRate < 40 && snapshot.tasks.length >= 5
+    ? "اگر با همین روند جلو بروی، احتمال عقب افتادن از ددلاین ها بالاست."
+    : "روند فعلی قابل قبول است.";
+  await ctx.reply(
+    `📈 پیشرفت\n` +
+      `todo: ${snapshot.todoCount} | doing: ${snapshot.doingCount} | done: ${snapshot.doneCount}\n` +
+      `Completion: ${snapshot.completionRate}% | Streak: ${snapshot.streak} روز\n\n` +
+      `نقاط گیر:\n${weakAreas || "- مورد بحرانی ثبت نشده"}\n\n` +
+      `هشدار: ${riskAlert}`,
+    myPathMenu()
+  );
+}
+
+async function showMyPathArtifacts(ctx) {
+  const userId = await ensureUser(ctx);
+  const rows = await query(
+    `SELECT id, type, title, url, created_at
+     FROM my_path_artifacts
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT 20`,
+    [userId]
+  );
+  const text = rows.rows.length
+    ? rows.rows.map((item) => `#${item.id} | ${item.title} (${item.type})\n${item.url || "-"} | ${toFaDate(item.created_at)}`).join("\n\n")
+    : "خروجی ثبت نشده. از «➕ خروجی جدید» استفاده کن.";
+  await ctx.reply(`🧾 خروجی ها (Proof/Portfolio)\n\n${text}`, myPathMenu());
+}
+
+async function showMyPathSuggestions(ctx) {
+  const userId = await ensureUser(ctx);
+  const goalsRes = await query(
+    `SELECT id, type, title
+     FROM my_path_goals
+     WHERE user_id = $1 AND status = 'active'
+     ORDER BY priority ASC, id DESC
+     LIMIT 10`,
+    [userId]
+  );
+  const suggestions = buildBridgeSuggestions(goalsRes.rows);
+  await ctx.reply(
+    `💡 پیشنهادهای هفته (Top 5)\n` + suggestions.map((item, idx) => `${idx + 1}. ${item}`).join("\n"),
+    myPathMenu()
+  );
+}
+
+async function updateMyPathTaskStatus(ctx, taskId, status) {
+  const userId = await ensureUser(ctx);
+  const allowed = new Set(["todo", "doing", "done"]);
+  if (!allowed.has(status)) return;
+  const updated = await query(
+    `UPDATE my_path_tasks
+     SET status = $1,
+         completed_at = CASE WHEN $1 = 'done' THEN NOW() ELSE NULL END,
+         updated_at = NOW()
+     WHERE id = $2 AND user_id = $3
+     RETURNING *`,
+    [status, taskId, userId]
+  );
+  if (!updated.rows.length) {
+    await ctx.reply("تسک با این شناسه برای شما پیدا نشد.", myPathMenu());
+    return;
+  }
+  if (status === "done") {
+    await query(
+      `INSERT INTO my_path_progress_logs (user_id, task_id, actual_minutes, note)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, taskId, updated.rows[0].estimated_minutes || null, "done via bot"]
+    );
+  }
+  await ctx.reply(`وضعیت تسک #${taskId} به ${status} تغییر کرد.`, myPathMenu());
+}
+
+async function handlePathWizardInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = pathSessions.get(key);
+  if (!session) return false;
+  const text = String(ctx.message?.text || "").trim();
+  if (text === "لغو") {
+    pathSessions.delete(key);
+    await ctx.reply("فرآیند مسیر لغو شد.", myPathMenu());
+    return true;
+  }
+
+  const steps = pathWizardStepKeys(session.mode);
+  const stepKey = steps[session.stepIndex];
+  if (!stepKey) {
+    pathSessions.delete(key);
+    await ctx.reply("نشست مسیر نامعتبر بود. دوباره تلاش کن.", myPathMenu());
+    return true;
+  }
+
+  if (stepKey === "freeDays") {
+    const picked = normalizePickedOption(text);
+    if (picked === "ثبت روزهای آزاد") {
+      if (!(session.answers.freeDays || []).length) {
+        await ctx.reply("حداقل یک روز آزاد انتخاب کن.", pathStepKeyboard(session.mode, stepKey, session));
+        return true;
+      }
+      session.stepIndex += 1;
+      pathSessions.set(key, session);
+      await askPathWizardStep(ctx, session);
+      return true;
+    }
+    if (!PATH_FREE_DAY_OPTIONS.includes(picked)) {
+      await ctx.reply("روز را از دکمه ها انتخاب کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.freeDays = toggleSelection(session.answers.freeDays, picked);
+    pathSessions.set(key, session);
+    await ctx.reply(`روزهای انتخابی: ${session.answers.freeDays.join("، ")}`, pathStepKeyboard(session.mode, stepKey, session));
+    return true;
+  }
+
+  if (stepKey === "confirm") {
+    if (text !== "ثبت نهایی مسیر") {
+      await ctx.reply("برای ادامه دکمه «ثبت نهایی مسیر» را بزن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    try {
+      if (session.mode === "onboarding") {
+        const split = parsePathSplit(session.answers.split);
+        await query(
+          `INSERT INTO my_path_profiles
+           (user_id, current_stage, four_week_goal, weekly_hours, free_days, university_weight, industry_weight)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+           ON CONFLICT (user_id) DO UPDATE SET
+             current_stage = EXCLUDED.current_stage,
+             four_week_goal = EXCLUDED.four_week_goal,
+             weekly_hours = EXCLUDED.weekly_hours,
+             free_days = EXCLUDED.free_days,
+             university_weight = EXCLUDED.university_weight,
+             industry_weight = EXCLUDED.industry_weight,
+             updated_at = NOW()`,
+          [
+            session.userId,
+            session.answers.currentStage,
+            session.answers.fourWeekGoal,
+            session.answers.weeklyHours,
+            JSON.stringify(session.answers.freeDays || []),
+            split.universityWeight,
+            split.industryWeight
+          ]
+        );
+      }
+      if (session.mode === "goal") {
+        await query(
+          `INSERT INTO my_path_goals
+           (user_id, type, title, start_date, end_date, priority, success_metrics)
+           VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6::jsonb)`,
+          [
+            session.userId,
+            session.answers.goalType,
+            session.answers.goalTitle,
+            session.answers.goalEndDate,
+            session.answers.goalPriority,
+            JSON.stringify([session.answers.goalMetrics])
+          ]
+        );
+      }
+      if (session.mode === "task") {
+        await query(
+          `INSERT INTO my_path_tasks
+           (user_id, goal_id, type, title, estimated_minutes, priority, due_date, status, attachments)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', '[]'::jsonb)`,
+          [
+            session.userId,
+            session.answers.taskGoalId,
+            session.answers.taskType,
+            session.answers.taskTitle,
+            session.answers.taskMinutes,
+            session.answers.taskPriority,
+            session.answers.taskDueDate
+          ]
+        );
+      }
+      if (session.mode === "artifact") {
+        await query(
+          `INSERT INTO my_path_artifacts
+           (user_id, goal_id, type, title, url, description)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            session.userId,
+            session.answers.artifactGoalId,
+            session.answers.artifactType,
+            session.answers.artifactTitle,
+            session.answers.artifactUrl,
+            session.answers.artifactDescription
+          ]
+        );
+      }
+      pathSessions.delete(key);
+      await ctx.reply("ثبت با موفقیت انجام شد ✅", myPathMenu());
+      return true;
+    } catch (error) {
+      console.error(error);
+      pathSessions.delete(key);
+      await ctx.reply("خطا در ذخیره سازی مسیر. دوباره تلاش کن.", myPathMenu());
+      return true;
+    }
+  }
+
+  if (stepKey === "currentStage") {
+    if (!PATH_STAGE_OPTIONS.includes(text)) {
+      await ctx.reply("از گزینه های مرحله استفاده کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.currentStage = text;
+  } else if (stepKey === "fourWeekGoal") {
+    if (!PATH_MAIN_GOAL_OPTIONS.includes(text)) {
+      await ctx.reply("از گزینه های هدف استفاده کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.fourWeekGoal = text;
+  } else if (stepKey === "weeklyHours") {
+    const hours = Number(text);
+    if (!Number.isInteger(hours) || hours < 1 || hours > 80) {
+      await ctx.reply("عدد معتبر بین 1 تا 80 وارد کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.weeklyHours = hours;
+  } else if (stepKey === "split") {
+    if (!parsePathSplit(text)) {
+      await ctx.reply("از دکمه های نسبت زمان استفاده کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.split = text;
+  } else if (stepKey === "goalType") {
+    const found = pathGoalTypeByLabel(text);
+    if (!found) {
+      await ctx.reply("نوع هدف را از دکمه ها انتخاب کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.goalType = found.value;
+  } else if (stepKey === "goalTitle") {
+    if (text.length < 3) {
+      await ctx.reply("عنوان هدف کوتاه است.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.goalTitle = text;
+  } else if (stepKey === "goalEndDate") {
+    if (isSkipText(text)) session.answers.goalEndDate = null;
+    else {
+      const parsedDate = parseIsoDate(text);
+      if (!parsedDate) {
+        await ctx.reply("فرمت تاریخ معتبر نیست. مثال: 2026-03-10", pathStepKeyboard(session.mode, stepKey, session));
+        return true;
+      }
+      session.answers.goalEndDate = parsedDate;
+    }
+  } else if (stepKey === "goalPriority") {
+    const priority = Number(text);
+    if (!Number.isInteger(priority) || priority < 1 || priority > 5) {
+      await ctx.reply("اولویت باید بین 1 تا 5 باشد.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.goalPriority = priority;
+  } else if (stepKey === "goalMetrics") {
+    session.answers.goalMetrics = text;
+  } else if (stepKey === "taskGoalId") {
+    if (isSkipText(text)) {
+      session.answers.taskGoalId = null;
+    } else {
+      const goalId = Number(text);
+      if (!Number.isInteger(goalId) || goalId < 1) {
+        await ctx.reply("شناسه هدف باید عدد باشد یا «رد».", pathStepKeyboard(session.mode, stepKey, session));
+        return true;
+      }
+      const goalRes = await query(`SELECT id FROM my_path_goals WHERE id = $1 AND user_id = $2 LIMIT 1`, [goalId, session.userId]);
+      if (!goalRes.rows.length) {
+        await ctx.reply("هدفی با این شناسه برای شما پیدا نشد.", pathStepKeyboard(session.mode, stepKey, session));
+        return true;
+      }
+      session.answers.taskGoalId = goalId;
+    }
+  } else if (stepKey === "taskType") {
+    const found = pathTaskTypeByLabel(text);
+    if (!found) {
+      await ctx.reply("نوع تسک را از دکمه ها انتخاب کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.taskType = found.value;
+  } else if (stepKey === "taskTitle") {
+    if (text.length < 3) {
+      await ctx.reply("عنوان تسک کوتاه است.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.taskTitle = text;
+  } else if (stepKey === "taskMinutes") {
+    const minutes = Number(text);
+    if (!Number.isInteger(minutes) || minutes < 10 || minutes > 720) {
+      await ctx.reply("زمان باید بین 10 تا 720 دقیقه باشد.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.taskMinutes = minutes;
+  } else if (stepKey === "taskPriority") {
+    const priority = Number(text);
+    if (!Number.isInteger(priority) || priority < 1 || priority > 5) {
+      await ctx.reply("اولویت باید بین 1 تا 5 باشد.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.taskPriority = priority;
+  } else if (stepKey === "taskDueDate") {
+    if (isSkipText(text)) session.answers.taskDueDate = null;
+    else {
+      const parsedDate = parseIsoDate(text);
+      if (!parsedDate) {
+        await ctx.reply("فرمت تاریخ معتبر نیست. مثال: 2026-03-10", pathStepKeyboard(session.mode, stepKey, session));
+        return true;
+      }
+      session.answers.taskDueDate = parsedDate;
+    }
+  } else if (stepKey === "artifactType") {
+    const found = pathArtifactTypeByLabel(text);
+    if (!found) {
+      await ctx.reply("نوع خروجی را از دکمه ها انتخاب کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.artifactType = found.value;
+  } else if (stepKey === "artifactGoalId") {
+    if (isSkipText(text)) {
+      session.answers.artifactGoalId = null;
+    } else {
+      const goalId = Number(text);
+      if (!Number.isInteger(goalId) || goalId < 1) {
+        await ctx.reply("شناسه هدف باید عدد باشد یا «رد».", pathStepKeyboard(session.mode, stepKey, session));
+        return true;
+      }
+      const goalRes = await query(`SELECT id FROM my_path_goals WHERE id = $1 AND user_id = $2 LIMIT 1`, [goalId, session.userId]);
+      if (!goalRes.rows.length) {
+        await ctx.reply("هدفی با این شناسه برای شما پیدا نشد.", pathStepKeyboard(session.mode, stepKey, session));
+        return true;
+      }
+      session.answers.artifactGoalId = goalId;
+    }
+  } else if (stepKey === "artifactTitle") {
+    if (text.length < 2) {
+      await ctx.reply("عنوان خروجی کوتاه است.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    }
+    session.answers.artifactTitle = text;
+  } else if (stepKey === "artifactUrl") {
+    if (isSkipText(text)) session.answers.artifactUrl = null;
+    else if (!validateUrl(text)) {
+      await ctx.reply("لینک معتبر نیست. با http:// یا https:// شروع کن.", pathStepKeyboard(session.mode, stepKey, session));
+      return true;
+    } else {
+      session.answers.artifactUrl = text;
+    }
+  } else if (stepKey === "artifactDescription") {
+    session.answers.artifactDescription = isSkipText(text) ? null : text;
+  }
+
+  session.stepIndex += 1;
+  pathSessions.set(key, session);
+  await askPathWizardStep(ctx, session);
+  return true;
+}
+
 async function ensureUser(ctx) {
   const telegramId = String(ctx.from.id);
   const fullName = `${ctx.from.first_name || ""} ${ctx.from.last_name || ""}`.trim() || "Student";
@@ -1840,6 +2637,31 @@ const menuLabelAliases = new Map([
   ["🛠️ اجرای پروژه", "اجرای پروژه"],
   ["🗺️ مسیر شغلی", "مسیر شغلی"],
   ["🎓 منابع صنعتی", "منابع صنعتی"],
+  ["📍 خلاصه مسیر", "خلاصه مسیر"],
+  ["خلاصه مسیر", "📍 خلاصه مسیر"],
+  ["⚙️ آنبوردینگ مسیر", "آنبوردینگ مسیر"],
+  ["آنبوردینگ مسیر", "⚙️ آنبوردینگ مسیر"],
+  ["🎯 هدف های فعال", "هدف های فعال"],
+  ["هدف های فعال", "🎯 هدف های فعال"],
+  ["📅 برنامه هفتگی", "برنامه هفتگی"],
+  ["برنامه هفتگی", "📅 برنامه هفتگی"],
+  ["✅ تسک های من", "تسک های من"],
+  ["تسک های من", "✅ تسک های من"],
+  ["📈 پیشرفت من", "پیشرفت من"],
+  ["پیشرفت من", "📈 پیشرفت من"],
+  ["🧾 خروجی ها", "خروجی ها"],
+  ["خروجی ها", "🧾 خروجی ها"],
+  ["💡 پیشنهادهای هفته", "پیشنهادهای هفته"],
+  ["پیشنهادهای هفته", "💡 پیشنهادهای هفته"],
+  ["➕ هدف جدید", "هدف جدید"],
+  ["هدف جدید", "➕ هدف جدید"],
+  ["➕ تسک جدید", "تسک جدید"],
+  ["تسک جدید", "➕ تسک جدید"],
+  ["➕ خروجی جدید", "خروجی جدید"],
+  ["خروجی جدید", "➕ خروجی جدید"],
+  ["ثبت نهایی مسیر", "ثبت نهایی مسیر"],
+  ["ثبت روزهای آزاد", "ثبت روزهای آزاد"],
+  ["خروج از مسیر من", MY_PATH_MENU_BACK],
   ["بازگشت به منوی اصلی", UNI_MENU_BACK],
   ["لغو ارسال محتوا", UNIVERSITY_SUBMISSION_BACK],
   ["ثبت نهایی ارسال", UNIVERSITY_SUBMISSION_DONE]
@@ -1940,6 +2762,18 @@ async function handleProfileWizardInput(ctx) {
     "اجرای پروژه",
     "مسیر شغلی",
     "منابع صنعتی",
+    "خلاصه مسیر",
+    "آنبوردینگ مسیر",
+    "هدف های فعال",
+    "برنامه هفتگی",
+    "تسک های من",
+    "پیشرفت من",
+    "خروجی ها",
+    "پیشنهادهای هفته",
+    "هدف جدید",
+    "تسک جدید",
+    "خروجی جدید",
+    MY_PATH_MENU_BACK,
     UNI_MENU_BACK
   ]);
 
@@ -2104,6 +2938,9 @@ function registerHandlers(bot) {
 
     const handledSubmission = await handleSubmissionWizardInput(ctx);
     if (handledSubmission) return;
+
+    const handledPath = await handlePathWizardInput(ctx);
+    if (handledPath) return;
 
     const handled = await handleProfileWizardInput(ctx);
     if (handled) return;
@@ -2299,27 +3136,63 @@ function registerHandlers(bot) {
   });
 
   bot.hears("مسیر من", async (ctx) => {
-    const userId = await ensureUser(ctx);
-    const profileRes = await query(`SELECT * FROM user_profiles WHERE user_id = $1`, [userId]);
+    await showMyPathHub(ctx);
+  });
 
-    if (!profileRes.rows.length) {
-      await ctx.reply("اول پروفایل را کامل کن.");
-      return;
-    }
+  bot.hears("خلاصه مسیر", async (ctx) => {
+    await showMyPathHub(ctx);
+  });
 
-    const profile = profileRes.rows[0];
-    const roadmapRes = await query(
-      `SELECT title FROM contents
-       WHERE kind = 'roadmap' AND is_published = TRUE AND (major = $1 OR major IS NULL)
-       ORDER BY created_at DESC LIMIT 3`,
-      [profile.major]
-    );
+  bot.hears("آنبوردینگ مسیر", async (ctx) => {
+    await startPathWizard(ctx, "onboarding");
+  });
 
-    const roadmaps = roadmapRes.rows.map((r, i) => `${i + 1}. ${r.title}`).join("\n") || "مسیری ثبت نشده";
+  bot.hears("هدف های فعال", async (ctx) => {
+    await showMyPathGoals(ctx);
+  });
 
-    await ctx.reply(
-      `مسیر شخصی تو:\nهدف: ${profile.short_term_goal}\nساعت آزاد: ${profile.weekly_hours}\n\nRoadmap:\n${roadmaps}\n\nبرنامه هفتگی:\n- 2h درس\n- 2h پروژه\n- 1h مرور\n- 1h آماده سازی بازار کار`
-    );
+  bot.hears("برنامه هفتگی", async (ctx) => {
+    await showMyPathWeeklyPlan(ctx);
+  });
+
+  bot.hears("تسک های من", async (ctx) => {
+    await showMyPathTasks(ctx);
+  });
+
+  bot.hears("پیشرفت من", async (ctx) => {
+    await showMyPathProgress(ctx);
+  });
+
+  bot.hears("خروجی ها", async (ctx) => {
+    await showMyPathArtifacts(ctx);
+  });
+
+  bot.hears("پیشنهادهای هفته", async (ctx) => {
+    await showMyPathSuggestions(ctx);
+  });
+
+  bot.hears("هدف جدید", async (ctx) => {
+    await startPathWizard(ctx, "goal");
+  });
+
+  bot.hears("تسک جدید", async (ctx) => {
+    await startPathWizard(ctx, "task");
+  });
+
+  bot.hears("خروجی جدید", async (ctx) => {
+    await startPathWizard(ctx, "artifact");
+  });
+
+  bot.hears(MY_PATH_MENU_BACK, async (ctx) => {
+    await ctx.reply("به منوی اصلی برگشتید.", mainMenu());
+  });
+
+  bot.hears(/^شروع تسک\s+(\d+)$/i, async (ctx) => {
+    await updateMyPathTaskStatus(ctx, Number(ctx.match[1]), "doing");
+  });
+
+  bot.hears(/^انجام تسک\s+(\d+)$/i, async (ctx) => {
+    await updateMyPathTaskStatus(ctx, Number(ctx.match[1]), "done");
   });
 
   bot.catch((error) => {

@@ -551,6 +551,73 @@ CREATE TABLE IF NOT EXISTS admin_notifications (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS my_path_profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  current_stage TEXT NOT NULL DEFAULT 'university_and_industry',
+  four_week_goal TEXT,
+  weekly_hours INTEGER NOT NULL DEFAULT 8,
+  free_days TEXT NOT NULL DEFAULT '[]',
+  university_weight INTEGER NOT NULL DEFAULT 50,
+  industry_weight INTEGER NOT NULL DEFAULT 50,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS my_path_goals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('academic', 'career', 'project', 'application')),
+  title TEXT NOT NULL,
+  start_date TEXT,
+  end_date TEXT,
+  priority INTEGER NOT NULL DEFAULT 3,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed')),
+  success_metrics TEXT NOT NULL DEFAULT '[]',
+  progress_percent INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS my_path_tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  goal_id INTEGER REFERENCES my_path_goals(id) ON DELETE SET NULL,
+  step_label TEXT,
+  type TEXT NOT NULL CHECK (type IN ('study', 'practice', 'project', 'apply', 'interview')),
+  title TEXT NOT NULL,
+  estimated_minutes INTEGER NOT NULL DEFAULT 60,
+  priority INTEGER NOT NULL DEFAULT 3,
+  due_date TEXT,
+  status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'doing', 'done')),
+  dependency_task_id INTEGER REFERENCES my_path_tasks(id) ON DELETE SET NULL,
+  attachments TEXT NOT NULL DEFAULT '[]',
+  planned_week TEXT,
+  completed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS my_path_progress_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  task_id INTEGER REFERENCES my_path_tasks(id) ON DELETE CASCADE,
+  actual_minutes INTEGER,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS my_path_artifacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  goal_id INTEGER REFERENCES my_path_goals(id) ON DELETE SET NULL,
+  type TEXT NOT NULL CHECK (type IN ('github', 'demo', 'file', 'certificate', 'resume_bullet')),
+  title TEXT NOT NULL,
+  url TEXT,
+  description TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 INSERT INTO industry_companies (name, domain, size, city, website_url, linkedin_url, is_verified)
 SELECT 'Fanjobo Labs', 'EdTech', '11-50', 'Tehran', 'https://fanjobo.example', 'https://linkedin.com/company/fanjobo', 1
 WHERE NOT EXISTS (SELECT 1 FROM industry_companies WHERE name = 'Fanjobo Labs');

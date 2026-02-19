@@ -551,6 +551,73 @@ CREATE TABLE IF NOT EXISTS admin_notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS my_path_profiles (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  current_stage TEXT NOT NULL DEFAULT 'university_and_industry',
+  four_week_goal TEXT,
+  weekly_hours INTEGER NOT NULL DEFAULT 8,
+  free_days JSONB NOT NULL DEFAULT '[]'::jsonb,
+  university_weight INTEGER NOT NULL DEFAULT 50,
+  industry_weight INTEGER NOT NULL DEFAULT 50,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS my_path_goals (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('academic', 'career', 'project', 'application')),
+  title TEXT NOT NULL,
+  start_date DATE,
+  end_date DATE,
+  priority INTEGER NOT NULL DEFAULT 3,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed')),
+  success_metrics JSONB NOT NULL DEFAULT '[]'::jsonb,
+  progress_percent INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS my_path_tasks (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  goal_id BIGINT REFERENCES my_path_goals(id) ON DELETE SET NULL,
+  step_label TEXT,
+  type TEXT NOT NULL CHECK (type IN ('study', 'practice', 'project', 'apply', 'interview')),
+  title TEXT NOT NULL,
+  estimated_minutes INTEGER NOT NULL DEFAULT 60,
+  priority INTEGER NOT NULL DEFAULT 3,
+  due_date DATE,
+  status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'doing', 'done')),
+  dependency_task_id BIGINT REFERENCES my_path_tasks(id) ON DELETE SET NULL,
+  attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
+  planned_week TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS my_path_progress_logs (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  task_id BIGINT REFERENCES my_path_tasks(id) ON DELETE CASCADE,
+  actual_minutes INTEGER,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS my_path_artifacts (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  goal_id BIGINT REFERENCES my_path_goals(id) ON DELETE SET NULL,
+  type TEXT NOT NULL CHECK (type IN ('github', 'demo', 'file', 'certificate', 'resume_bullet')),
+  title TEXT NOT NULL,
+  url TEXT,
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 INSERT INTO industry_companies (name, domain, size, city, website_url, linkedin_url, is_verified)
 SELECT 'Fanjobo Labs', 'EdTech', '11-50', 'Tehran', 'https://fanjobo.example', 'https://linkedin.com/company/fanjobo', TRUE
 WHERE NOT EXISTS (SELECT 1 FROM industry_companies WHERE name = 'Fanjobo Labs');
