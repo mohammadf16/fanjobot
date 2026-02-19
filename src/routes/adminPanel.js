@@ -3,6 +3,7 @@ const { query } = require("../db");
 const { config } = require("../config");
 const { getLogs } = require("../services/logger");
 const { testDriveReadWrite } = require("../services/googleDrive");
+const { isBotAvailable, sendTelegramMessage } = require("../bot");
 
 const router = express.Router();
 
@@ -77,6 +78,110 @@ async function createNotification({ type, title, message, payload }) {
      (type, title, message, payload, status)
      VALUES ($1, $2, $3, $4::jsonb, 'open')`,
     [type, title, message, JSON.stringify(payload || {})]
+  );
+}
+
+async function createUserEvent({ userId, eventType, payload }) {
+  if (!userId || !eventType) return;
+  await query(
+    `INSERT INTO user_events
+     (user_id, event_type, payload)
+     VALUES ($1, $2, $3::jsonb)`,
+    [userId, eventType, JSON.stringify(payload || {})]
+  );
+}
+
+function toBoolean(raw, fallback = false) {
+  if (raw === undefined || raw === null || raw === "") return fallback;
+  const normalized = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildSubmissionDecisionMessage(submission, action, reason) {
+  const approved = action === "approve";
+  const lines = [
+    "Fanjobo moderation update",
+    "",
+    `Title: ${submission.title || "-"}`,
+    `Result: ${approved ? "Approved" : "Rejected"}`
+  ];
+
+  const normalizedReason = toNullableString(reason);
+  if (normalizedReason) {
+    lines.push(`Reason: ${normalizedReason}`);
+  }
+
+  lines.push("", "Open the bot and continue from the University menu.");
+  return lines.join("\n");
+}
+
+async function notifyTelegramUser(userId, text, metadata = {}) {
+  const userRes = await query(
+    `SELECT id, full_name, telegram_id
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [userId]
+  );
+
+  const user = userRes.rows[0];
+  if (!user) {
+    return { delivered: false, reason: "user-not-found" };
+  }
+
+  const telegramId = toNullableString(user.telegram_id);
+  if (!telegramId) {
+    await createUserEvent({
+      userId,
+      eventType: "admin_telegram_notification_skipped",
+      payload: { reason: "missing-telegram-id", ...metadata }
+    });
+    return { delivered: false, reason: "missing-telegram-id" };
+  }
+
+  if (!isBotAvailable()) {
+    await createUserEvent({
+      userId,
+      eventType: "admin_telegram_notification_failed",
+      payload: { reason: "bot-offline", ...metadata }
+    });
+    return { delivered: false, reason: "bot-offline" };
+  }
+
+  try {
+    await sendTelegramMessage(telegramId, text);
+    await createUserEvent({
+      userId,
+      eventType: "admin_telegram_notification_sent",
+      payload: { telegramId, ...metadata }
+    });
+    return { delivered: true, telegramId };
+  } catch (error) {
+    const message = error?.message || String(error);
+    await createUserEvent({
+      userId,
+      eventType: "admin_telegram_notification_failed",
+      payload: { telegramId, error: message, ...metadata }
+    });
+    return { delivered: false, reason: message };
+  }
+}
+
+async function notifySubmissionDecision(submission, action, reason) {
+  return notifyTelegramUser(
+    submission.user_id,
+    buildSubmissionDecisionMessage(submission, action, reason),
+    {
+      submissionId: submission.id,
+      action,
+      reason: toNullableString(reason)
+    }
   );
 }
 
@@ -187,6 +292,166 @@ router.post("/integrations/drive/check", async (req, res, next) => {
   }
 });
 
+router.get("/broadcast/audience", async (req, res, next) => {
+  try {
+    const limit = toLimit(req.query.limit, 20, 200);
+
+    const totalsRes = await query(
+      `SELECT COUNT(*) AS total_started_users
+       FROM users
+       WHERE COALESCE(telegram_id, '') <> ''`
+    );
+
+    const recentUsersRes = await query(
+      `SELECT id, full_name, telegram_id, created_at
+       FROM users
+       WHERE COALESCE(telegram_id, '') <> ''
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    res.json({
+      audience: {
+        totalStartedUsers: Number(totalsRes.rows[0]?.total_started_users || 0),
+        botOnline: isBotAvailable()
+      },
+      recentUsers: recentUsersRes.rows
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/broadcast/send", async (req, res, next) => {
+  try {
+    const message = toNullableString(req.body?.message);
+    if (!message) {
+      return res.status(400).json({ error: "message is required" });
+    }
+    if (message.length > 3500) {
+      return res.status(400).json({ error: "message is too long (max 3500 chars)" });
+    }
+
+    const dryRun = toBoolean(req.body?.dryRun, false);
+    const rawLimit = Number(req.body?.limit);
+    const limit =
+      Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(10000, Math.floor(rawLimit)) : null;
+
+    const recipientsRes = limit
+      ? await query(
+          `SELECT id, full_name, telegram_id
+           FROM users
+           WHERE COALESCE(telegram_id, '') <> ''
+           ORDER BY created_at DESC
+           LIMIT $1`,
+          [limit]
+        )
+      : await query(
+          `SELECT id, full_name, telegram_id
+           FROM users
+           WHERE COALESCE(telegram_id, '') <> ''
+           ORDER BY created_at DESC`
+        );
+
+    const recipients = recipientsRes.rows;
+    if (!recipients.length) {
+      return res.json({
+        ok: true,
+        dryRun,
+        totalRecipients: 0,
+        sentCount: 0,
+        failedCount: 0,
+        failures: []
+      });
+    }
+
+    if (dryRun) {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        botOnline: isBotAvailable(),
+        totalRecipients: recipients.length,
+        sampleRecipients: recipients.slice(0, 12).map((item) => ({
+          id: item.id,
+          full_name: item.full_name,
+          telegram_id: item.telegram_id
+        }))
+      });
+    }
+
+    if (!isBotAvailable()) {
+      return res.status(503).json({
+        error: "Telegram bot is offline. Start the bot and retry broadcast."
+      });
+    }
+
+    const outboundText = `\uD83D\uDCE2 Message from Fanjobo admin\n\n${message}`;
+    let sentCount = 0;
+    let failedCount = 0;
+    const failures = [];
+
+    for (const recipient of recipients) {
+      try {
+        await sendTelegramMessage(recipient.telegram_id, outboundText);
+        sentCount += 1;
+        await createUserEvent({
+          userId: recipient.id,
+          eventType: "admin_broadcast_sent",
+          payload: {
+            messagePreview: message.slice(0, 160),
+            telegramId: recipient.telegram_id
+          }
+        });
+      } catch (error) {
+        failedCount += 1;
+        const failMessage = error?.message || String(error);
+        if (failures.length < 25) {
+          failures.push({
+            userId: recipient.id,
+            fullName: recipient.full_name,
+            error: failMessage
+          });
+        }
+        await createUserEvent({
+          userId: recipient.id,
+          eventType: "admin_broadcast_failed",
+          payload: {
+            messagePreview: message.slice(0, 160),
+            telegramId: recipient.telegram_id,
+            error: failMessage
+          }
+        });
+      }
+
+      // Light throttle to avoid Telegram flood limits on big blasts.
+      await wait(35);
+    }
+
+    await createNotification({
+      type: "admin-broadcast",
+      title: "Admin broadcast completed",
+      message: `Sent ${sentCount}/${recipients.length} messages`,
+      payload: {
+        totalRecipients: recipients.length,
+        sentCount,
+        failedCount
+      }
+    });
+
+    res.json({
+      ok: true,
+      dryRun: false,
+      totalRecipients: recipients.length,
+      sentCount,
+      failedCount,
+      failures
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/dashboard/overview", async (req, res, next) => {
   try {
     const totalsRes = await query(
@@ -201,6 +466,7 @@ router.get("/dashboard/overview", async (req, res, next) => {
          (SELECT COUNT(*) FROM industry_applications) AS total_applications,
          (SELECT COUNT(*) FROM community_content_submissions) AS total_submissions,
          (SELECT COUNT(*) FROM community_content_submissions WHERE status = 'pending') AS pending_submissions,
+         (SELECT COUNT(*) FROM users WHERE COALESCE(telegram_id, '') <> '') AS bot_started_users,
          (SELECT COUNT(*) FROM admin_notifications WHERE status = 'open') AS open_notifications`
     );
 
@@ -1300,8 +1566,11 @@ router.get("/moderation/submissions/:submissionId", async (req, res, next) => {
 router.post("/moderation/submissions/:submissionId/review", async (req, res, next) => {
   try {
     const submissionId = Number(req.params.submissionId);
-    const action = req.body?.action || "approve";
-    const reason = req.body?.reason || null;
+    const action = String(req.body?.action || "approve").toLowerCase();
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ error: "action must be approve or reject" });
+    }
+    const reason = toNullableString(req.body?.reason);
 
     const submissionRes = await query(
       `SELECT *
@@ -1368,9 +1637,11 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
         payload: { submissionId, contentId: insertedContent.rows[0].id }
       });
 
-      return res.json({ submission: updated.rows[0], content: insertedContent.rows[0] });
+      const notify = await notifySubmissionDecision(submission, "approve", reason);
+      return res.json({ submission: updated.rows[0], content: insertedContent.rows[0], notify });
     }
 
+    const rejectReason = reason || "Rejected by admin moderation";
     const rejected = await query(
       `UPDATE community_content_submissions
        SET status = 'rejected',
@@ -1379,7 +1650,7 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
            reviewed_by = 'admin'
        WHERE id = $2
        RETURNING *`,
-      [reason || "Rejected by admin moderation", submissionId]
+      [rejectReason, submissionId]
     );
 
     await createNotification({
@@ -1389,7 +1660,8 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
       payload: { submissionId }
     });
 
-    return res.json({ submission: rejected.rows[0] });
+    const notify = await notifySubmissionDecision(submission, "reject", rejectReason);
+    return res.json({ submission: rejected.rows[0], notify });
   } catch (error) {
     next(error);
   }

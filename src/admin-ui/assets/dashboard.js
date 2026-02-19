@@ -14,10 +14,63 @@
     return document.getElementById(id);
   }
 
+  function renderHeroMetrics(overview) {
+    var totalContents = Number((overview || {}).total_contents || 0);
+    var publishedContents = Number((overview || {}).published_contents || 0);
+    var publishRate = totalContents ? Math.round((publishedContents / totalContents) * 100) : 0;
+    var backlog =
+      Number((overview || {}).pending_submissions || 0) + Number((overview || {}).pending_opportunities || 0);
+
+    var items = [
+      {
+        label: "Moderation Backlog",
+        value: backlog,
+        note: "Pending submissions + opportunities",
+        tone: backlog > 0 ? "warn" : "ok"
+      },
+      {
+        label: "Open Notifications",
+        value: Number((overview || {}).open_notifications || 0),
+        note: "Unresolved admin notifications",
+        tone: Number((overview || {}).open_notifications || 0) > 0 ? "warn" : "ok"
+      },
+      {
+        label: "Bot Started Users",
+        value: Number((overview || {}).bot_started_users || 0),
+        note: "Users reachable in Telegram",
+        tone: "ok"
+      },
+      {
+        label: "Publish Rate",
+        value: publishRate + "%",
+        note: "Published / total content",
+        tone: publishRate >= 70 ? "ok" : "warn"
+      }
+    ];
+
+    el("dashboardHeroMetrics").innerHTML =
+      items
+        .map(function (item) {
+          return (
+            "<article class='hero-metric " +
+            item.tone +
+            "'><div class='hero-metric-value'>" +
+            AdminCore.esc(String(item.value)) +
+            "</div><div class='hero-metric-label'>" +
+            AdminCore.esc(item.label) +
+            "</div><div class='hero-metric-note'>" +
+            AdminCore.esc(item.note) +
+            "</div></article>"
+          );
+        })
+        .join("") || "<div class='meta-text'>No dashboard data available.</div>";
+  }
+
   function renderStats(overview) {
     var items = [
       ["Users", "total_users"],
       ["Profiles", "total_profiles"],
+      ["Bot Started", "bot_started_users"],
       ["Contents", "total_contents"],
       ["Published", "published_contents"],
       ["Opportunities", "total_opportunities"],
@@ -29,20 +82,19 @@
       ["Open Notifs", "open_notifications"]
     ];
 
-    var html = items
-      .map(function (item) {
-        var value = Number((overview || {})[item[1]] || 0).toLocaleString("en-US");
-        return (
-          '<article class="stat"><div class="stat-value">' +
-          value +
-          '</div><div class="stat-key">' +
-          item[0] +
-          "</div></article>"
-        );
-      })
-      .join("");
-
-    el("dashboardStatsGrid").innerHTML = html || "<div>No stats</div>";
+    el("dashboardStatsGrid").innerHTML =
+      items
+        .map(function (item) {
+          var value = Number((overview || {})[item[1]] || 0).toLocaleString("en-US");
+          return (
+            "<article class='stat'><div class='stat-value'>" +
+            value +
+            "</div><div class='stat-key'>" +
+            item[0] +
+            "</div></article>"
+          );
+        })
+        .join("") || "<div>No stats</div>";
   }
 
   function queueItemsByType(type) {
@@ -89,48 +141,41 @@
     var type = String((el("dashboardQueueTypeInput") || {}).value || "all").trim();
     var queue = queueItemsByType(type === "all" ? "" : type);
 
-    var html = queue
-      .map(function (item) {
-        return (
-          '<article class="list-item">' +
-          '<div class="title">' +
-          AdminCore.esc(item.title || "-") +
-          "</div>" +
-          "<div class='meta'>" +
-          AdminCore.esc(item.meta || "-") +
-          "</div>" +
-          "<div class='actions'>" +
-          AdminCore.statusPill(item.status || "-") +
-          "<a class='btn ghost' href='" +
-          AdminCore.esc(item.href || "/admin/dashboard") +
-          "'>Open Queue</a>" +
-          "</div>" +
-          "</article>"
-        );
-      })
-      .join("");
-
-    el("dashboardQuickQueue").innerHTML = html || "<div class='meta-text'>No urgent records.</div>";
+    el("dashboardQuickQueue").innerHTML =
+      queue
+        .map(function (item) {
+          return (
+            "<article class='list-item'><div class='title'>" +
+            AdminCore.esc(item.title || "-") +
+            "</div><div class='meta'>" +
+            AdminCore.esc(item.meta || "-") +
+            "</div><div class='actions'>" +
+            AdminCore.statusPill(item.status || "-") +
+            "<a class='btn ghost' href='" +
+            AdminCore.esc(item.href || "/admin/dashboard") +
+            "'>Open Queue</a></div></article>"
+          );
+        })
+        .join("") || "<div class='meta-text'>No urgent records.</div>";
   }
 
   function renderRecentUsers(users) {
-    var html = (users || [])
-      .map(function (item) {
-        return (
-          '<article class="list-item"><div class="title">#' +
-          item.id +
-          " " +
-          AdminCore.esc(item.full_name || "-") +
-          "</div><div class='meta'>" +
-          AdminCore.esc(item.phone_or_email || "-") +
-          "</div><div class='meta'>" +
-          AdminCore.esc(item.created_at || "") +
-          "</div></article>"
-        );
-      })
-      .join("");
-
-    el("dashboardRecentUsers").innerHTML = html || "<div class='meta-text'>No recent users.</div>";
+    el("dashboardRecentUsers").innerHTML =
+      (users || [])
+        .map(function (item) {
+          return (
+            "<article class='list-item'><div class='title'>#" +
+            item.id +
+            " " +
+            AdminCore.esc(item.full_name || "-") +
+            "</div><div class='meta'>" +
+            AdminCore.esc(item.phone_or_email || "-") +
+            "</div><div class='meta'>" +
+            AdminCore.esc(item.created_at || "") +
+            "</div></article>"
+          );
+        })
+        .join("") || "<div class='meta-text'>No recent users.</div>";
   }
 
   function renderAnalytics(analytics) {
@@ -193,7 +238,10 @@
 
   async function loadAll(silent) {
     var overviewData = await AdminCore.api("/api/admin/dashboard/overview");
-    renderStats(overviewData.overview || {});
+    var overview = overviewData.overview || {};
+
+    renderHeroMetrics(overview);
+    renderStats(overview);
     renderRecentUsers(overviewData.recentUsers || []);
 
     var queueData = await Promise.all([
@@ -210,7 +258,7 @@
     renderQuickQueue();
 
     var analyticsData = await AdminCore.api("/api/admin/dashboard/analytics");
-    lastPayload.overview = overviewData.overview || {};
+    lastPayload.overview = overview;
     lastPayload.analytics = analyticsData.analytics || {};
     renderAnalytics(lastPayload.analytics);
 

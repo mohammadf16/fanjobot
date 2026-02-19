@@ -4,7 +4,7 @@ const { config } = require("../config");
 
 const router = express.Router();
 const assetsDir = path.join(__dirname, "..", "admin-ui", "assets");
-const assetVersion = "20260219-3";
+const assetVersion = "20260219-4";
 
 function escapeAttr(value) {
   return String(value || "")
@@ -25,6 +25,7 @@ function noStore(_req, res, next) {
 const navItems = [
   { key: "dashboard", label: "Overview", href: "/admin/dashboard" },
   { key: "users", label: "Users & Profiles", href: "/admin/users" },
+  { key: "messaging", label: "Messaging", href: "/admin/messaging" },
   { key: "moderation", label: "Moderation", href: "/admin/moderation" },
   { key: "content", label: "Content", href: "/admin/content" },
   { key: "projects", label: "Projects & Ops", href: "/admin/projects" },
@@ -114,9 +115,12 @@ function renderPage({ title, heading, subtitle, activeNav, content, scriptName }
 }
 
 const dashboardContent = `
-<section class="card">
+<section class="card dashboard-hero">
   <div class="section-head">
-    <h3>Overview Stats</h3>
+    <div>
+      <h3>Operations Command Center</h3>
+      <div class="meta-text">Live snapshot of moderation pressure, publishing health, and bot audience.</div>
+    </div>
     <div class="toolbar">
       <button id="dashboardRefreshBtn" class="btn ghost">Refresh</button>
       <button id="dashboardExportBtn" class="btn ghost">Export JSON</button>
@@ -128,10 +132,18 @@ const dashboardContent = `
       </select>
     </div>
   </div>
-  <div id="dashboardStatsGrid" class="stats-grid"></div>
+  <div id="dashboardHeroMetrics" class="hero-metrics"></div>
 </section>
 
-<section class="grid-2">
+<section class="card">
+  <div class="section-head">
+    <h3>Core Metrics</h3>
+    <div class="meta-text">System-wide totals with balanced card sizes for quick scanning.</div>
+  </div>
+  <div id="dashboardStatsGrid" class="stats-grid stats-grid-dashboard"></div>
+</section>
+
+<section class="grid-2 dashboard-columns">
   <article class="card">
     <div class="section-head">
       <h3>Quick Queue</h3>
@@ -152,7 +164,7 @@ const dashboardContent = `
   </article>
 </section>
 
-<section class="grid-3">
+<section class="grid-2">
   <article class="card">
     <h3>Majors Distribution</h3>
     <div class="table-wrap">
@@ -170,17 +182,18 @@ const dashboardContent = `
         <tbody id="dashboardSubmissionAnalyticsBody"></tbody>
       </table>
     </div>
-  </article>
-  <article class="card">
-    <h3>Content Analytics</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Type</th><th>Kind</th><th>Total</th><th>Published</th></tr></thead>
         <tbody id="dashboardContentAnalyticsBody"></tbody>
       </table>
     </div>
-    <pre id="dashboardOpsAnalyticsBox" class="codebox compact">No data</pre>
   </article>
+</section>
+
+<section class="card">
+  <h3>Operations Snapshot</h3>
+  <pre id="dashboardOpsAnalyticsBox" class="codebox compact">No data</pre>
 </section>
 `;
 
@@ -259,7 +272,7 @@ const moderationContent = `
       </select>
       <input id="moderationKindInput" placeholder="kind (optional)" />
       <input id="moderationSearchInput" placeholder="local search title/user id" />
-      <input id="moderationReasonInput" placeholder="review reason (optional)" />
+      <input id="moderationReasonInput" placeholder="review reason (reject: recommended)" />
       <button id="moderationLoadBtn" class="btn">Load</button>
       <button id="moderationApproveSelectedBtn" class="btn">Approve Selected</button>
       <button id="moderationRejectSelectedBtn" class="btn danger">Reject Selected</button>
@@ -277,6 +290,47 @@ const moderationContent = `
 <section class="card">
   <h3>Submission Full Detail</h3>
   <pre id="moderationDetailBox" class="codebox">Select a submission...</pre>
+</section>
+`;
+
+const messagingContent = `
+<section class="grid-2">
+  <article class="card">
+    <div class="section-head">
+      <h3>Broadcast Message</h3>
+      <div class="toolbar">
+        <button id="msgLoadAudienceBtn" class="btn ghost">Refresh Audience</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <input id="msgLimitInput" type="number" min="1" max="10000" value="500" placeholder="send limit (optional)" />
+      <label class="check-row">
+        <input id="msgDryRunInput" type="checkbox" checked />
+        Dry run only (no messages sent)
+      </label>
+    </div>
+    <textarea id="msgBodyInput" class="message-box" placeholder="Write the message to send to all users who started the bot..."></textarea>
+    <div class="toolbar">
+      <button id="msgSendBtn" class="btn">Run Broadcast</button>
+      <button id="msgClearBtn" class="btn ghost">Clear</button>
+      <button id="msgCopyBtn" class="btn ghost">Copy Text</button>
+    </div>
+    <div id="msgResultMeta" class="meta-text">No broadcast executed yet.</div>
+    <pre id="msgResultBox" class="codebox compact">Waiting for input...</pre>
+  </article>
+
+  <article class="card">
+    <div class="section-head">
+      <h3>Started Bot Audience</h3>
+      <div id="msgAudienceChips" class="chip-row"></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>User</th><th>Name</th><th>Telegram</th><th>Started</th></tr></thead>
+        <tbody id="msgAudienceBody"></tbody>
+      </table>
+    </div>
+  </article>
 </section>
 `;
 
@@ -538,6 +592,19 @@ router.get("/admin/projects", (_req, res) => {
       activeNav: "projects",
       content: projectsContent,
       scriptName: "projects.js"
+    })
+  );
+});
+
+router.get("/admin/messaging", (_req, res) => {
+  res.type("html").send(
+    renderPage({
+      title: "Fanjobo Admin | Messaging",
+      heading: "Messaging",
+      subtitle: "Broadcast custom messages to users who started the bot",
+      activeNav: "messaging",
+      content: messagingContent,
+      scriptName: "messages.js"
     })
   );
 });

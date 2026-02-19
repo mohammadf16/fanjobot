@@ -83,13 +83,35 @@
     el("moderationDetailBox").textContent = AdminCore.toPretty(data);
   }
 
-  async function review(id, action) {
-    var reason = String((el("moderationReasonInput") || {}).value || "").trim();
-    await AdminCore.api("/api/admin/moderation/submissions/" + id + "/review", {
+  function resolveReviewReason(action) {
+    var input = el("moderationReasonInput");
+    var typedReason = String((input || {}).value || "").trim();
+
+    if (action === "approve") {
+      return null;
+    }
+
+    if (typedReason) {
+      return typedReason;
+    }
+
+    var prompted = window.prompt("Reject reason (optional). Leave empty for default message:", "");
+    if (prompted === null) {
+      return "__cancel__";
+    }
+    var normalized = String(prompted || "").trim();
+    if (normalized && input) {
+      input.value = normalized;
+    }
+    return normalized || "Rejected by admin moderation";
+  }
+
+  async function review(id, action, reason) {
+    return AdminCore.api("/api/admin/moderation/submissions/" + id + "/review", {
       method: "POST",
       body: {
         action: action,
-        reason: reason || "Reviewed in upgraded admin panel"
+        reason: reason || null
       }
     });
   }
@@ -101,20 +123,36 @@
       return;
     }
 
+    var reason = resolveReviewReason(action);
+    if (reason === "__cancel__") {
+      AdminCore.setStatus("Bulk " + action + " cancelled.", "info");
+      return;
+    }
+
     var results = await Promise.allSettled(
       ids.map(function (id) {
-        return review(id, action);
+        return review(id, action, reason);
       })
     );
     var okCount = results.filter(function (result) {
       return result.status === "fulfilled";
     }).length;
     var failCount = results.length - okCount;
+    var notifyFailCount = results.filter(function (result) {
+      return result.status === "fulfilled" && result.value && result.value.notify && !result.value.notify.delivered;
+    }).length;
 
     await loadSubmissions();
     AdminCore.setStatus(
-      "Bulk " + action + " complete. Success: " + okCount + " | Failed: " + failCount,
-      failCount ? "warn" : "ok"
+      "Bulk " +
+        action +
+        " complete. Success: " +
+        okCount +
+        " | Failed: " +
+        failCount +
+        " | Notify failed: " +
+        notifyFailCount,
+      failCount || notifyFailCount ? "warn" : "ok"
     );
   }
 
@@ -196,12 +234,25 @@
         return;
       }
 
-      review(id, approveBtn ? "approve" : "reject")
-        .then(function () {
+      var action = approveBtn ? "approve" : "reject";
+      var reason = resolveReviewReason(action);
+      if (reason === "__cancel__") {
+        AdminCore.setStatus("Review action cancelled.", "info");
+        return;
+      }
+
+      var reviewResult = null;
+      review(id, action, reason)
+        .then(function (data) {
+          reviewResult = data || null;
           return Promise.all([loadSubmissions(), loadDetail(id)]);
         })
         .then(function () {
-          AdminCore.setStatus("Submission updated.", "ok");
+          if (reviewResult && reviewResult.notify && !reviewResult.notify.delivered) {
+            AdminCore.setStatus("Submission updated. User notification was not delivered.", "warn");
+            return;
+          }
+          AdminCore.setStatus("Submission updated and user notified.", "ok");
         })
         .catch(function (error) {
           AdminCore.setStatus(error.message || "Failed to update submission.", "bad");

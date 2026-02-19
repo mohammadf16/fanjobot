@@ -22,8 +22,10 @@ const bookDownloadLocks = new Map();
 const BOOK_CACHE_DIR = path.join(process.cwd(), "tmp", "telegram-book-cache");
 const BOOK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const BOOK_CACHE_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
-const BOOK_PANEL_LIMIT = 12;
+const BOOK_PANEL_PAGE_SIZE = 5;
+const BOOK_PANEL_FETCH_LIMIT = 120;
 let bookCacheSweepTimer = null;
+let activeBotInstance = null;
 
 const LABEL_START = "🚀 شروع";
 const LABEL_PROFILE = "🧾 تکمیل پروفایل";
@@ -499,6 +501,34 @@ function formatList(items) {
   return items.map((item, index) => `${index + 1}. ${item.title}`).join("\n");
 }
 
+function clampInt(value, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return min;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+function extractLabeledLine(description, label) {
+  const text = String(description || "").replace(/\r/g, "");
+  const match = text.match(new RegExp(`${label}\\s*[:：]\\s*(.+)`, "i"));
+  if (!match?.[1]) return null;
+  const value = String(match[1]).trim();
+  if (!value || value === "ثبت نشده") return null;
+  return value;
+}
+
+function extractBookMeta(item) {
+  return {
+    courseName: extractLabeledLine(item?.description, "درس مرتبط"),
+    professorName: extractLabeledLine(item?.description, "استاد مرتبط"),
+    purpose: extractLabeledLine(item?.description, "هدف")
+  };
+}
+
+function withFallback(value, fallback = "ثبت نشده") {
+  const text = String(value || "").trim();
+  return text || fallback;
+}
+
 function sanitizeBookFileName(title) {
   const base = String(title || "book")
     .replace(/[\\/:*?"<>|]+/g, " ")
@@ -509,22 +539,101 @@ function sanitizeBookFileName(title) {
   return `${base || "book"}.pdf`;
 }
 
-function buildBookPanelKeyboard(items) {
+function buildBookPanelKeyboard(items, page, totalPages) {
   const rows = items.map((item) => {
     const labelBase = String(item.title || "کتاب بدون عنوان")
       .replace(/\s+/g, " ")
       .trim();
     const label = labelBase.length > 48 ? `${labelBase.slice(0, 45)}...` : labelBase;
-    return [Markup.button.callback(`📚 ${label}`, `bookdl:${item.id}`)];
+    return [Markup.button.callback(`📚 ${label}`, `bookdt:${item.id}:${page}`)];
   });
 
-  rows.push([Markup.button.callback("🔄 بروزرسانی لیست", "booklist:refresh")]);
+  const navRow = [];
+  if (page > 0) navRow.push(Markup.button.callback("⬅️ قبلی", `bookpg:${page - 1}`));
+  navRow.push(Markup.button.callback(`${page + 1}/${totalPages}`, "booknoop"));
+  if (page < totalPages - 1) navRow.push(Markup.button.callback("بعدی ➡️", `bookpg:${page + 1}`));
+  rows.push(navRow);
+
+  rows.push([Markup.button.callback("🔄 بروزرسانی لیست", `bookrf:${page}`)]);
   return Markup.inlineKeyboard(rows);
 }
 
-async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_LIMIT }) {
+function buildBookDetailKeyboard({ contentId, page, canDownload }) {
+  const rows = [];
+  if (canDownload) {
+    rows.push([Markup.button.callback("⬇️ دانلود فایل", `bookdl:${contentId}:${page}`)]);
+  }
+  rows.push([Markup.button.callback("⬅️ بازگشت به لیست", `bookbk:${page}`)]);
+  rows.push([Markup.button.callback("🔄 بروزرسانی لیست", `bookrf:${page}`)]);
+  return Markup.inlineKeyboard(rows);
+}
+
+function buildBookListMessage({ major, term, page, totalPages, totalItems, pageItems }) {
+  const startIndex = page * BOOK_PANEL_PAGE_SIZE;
+  const listText = pageItems
+    .map((item, index) => {
+      const meta = extractBookMeta(item);
+      const professor = meta.professorName ? ` | استاد: ${meta.professorName}` : "";
+      return `${startIndex + index + 1}. ${item.title}${professor}`;
+    })
+    .join("\n");
+
+  return (
+    `کتاب های دانشگاه\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n` +
+    `نتیجه: ${totalItems} مورد | صفحه ${page + 1} از ${totalPages}\n\n` +
+    `${listText}\n\n` +
+    "روی هر مورد بزن تا جزئیات را ببینی و بعد فایل را دانلود کنی."
+  );
+}
+
+function buildBookDetailMessage(item) {
+  const meta = extractBookMeta(item);
+  const hasFile = Boolean(resolveItemDriveFileId(item));
+  return [
+    `📚 ${withFallback(item.title, "بدون عنوان")}`,
+    `شناسه: #${item.id}`,
+    `وضعیت: ${hasFile ? "تایید شده و آماده دانلود ✅" : "منتشر شده ولی فایل ندارد ⚠️"}`,
+    `رشته: ${withFallback(item.major, "عمومی")}`,
+    `ترم: ${withFallback(item.term, "عمومی")}`,
+    `درس مرتبط: ${withFallback(meta.courseName)}`,
+    `استاد مرتبط: ${withFallback(meta.professorName)}`,
+    `هدف: ${withFallback(meta.purpose)}`
+  ].join("\n");
+}
+
+function trimCaptionLine(value, max = 90) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "-";
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+function buildBookDocumentCaption(item) {
+  const meta = extractBookMeta(item);
+  const lines = [
+    `📚 ${trimCaptionLine(item.title, 80)}`,
+    `رشته: ${trimCaptionLine(item.major || "عمومی", 50)} | ترم: ${trimCaptionLine(item.term || "عمومی", 20)}`,
+    `درس: ${trimCaptionLine(meta.courseName || "ثبت نشده", 70)}`,
+    `استاد: ${trimCaptionLine(meta.professorName || "ثبت نشده", 70)}`
+  ];
+  return lines.join("\n").slice(0, 1024);
+}
+
+async function sendOrEditInlinePanel(ctx, text, keyboard) {
+  if (ctx.callbackQuery?.message) {
+    try {
+      await ctx.editMessageText(text, keyboard);
+      return;
+    } catch (error) {
+      const message = String(error?.message || "").toLowerCase();
+      if (message.includes("message is not modified")) return;
+    }
+  }
+  await ctx.reply(text, keyboard);
+}
+
+async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_FETCH_LIMIT }) {
   const res = await query(
-    `SELECT c.id, c.title,
+    `SELECT c.id, c.title, c.description, c.kind, c.major, c.term,
             (
               SELECT cf.drive_file_id
               FROM content_files cf
@@ -577,7 +686,7 @@ async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_LIMI
 
 async function getUniversityBookById({ contentId, major, term }) {
   const res = await query(
-    `SELECT c.id, c.title,
+    `SELECT c.id, c.title, c.description, c.kind, c.major, c.term,
             (
               SELECT cf.drive_file_id
               FROM content_files cf
@@ -725,7 +834,7 @@ async function sendUniversityBookById(ctx, contentId) {
         filename: fileName
       },
       {
-        caption: `📚 ${item.title}`
+        caption: buildBookDocumentCaption(item)
       }
     );
   } catch (error) {
@@ -739,6 +848,10 @@ async function sendUniversityBookById(ctx, contentId) {
 }
 
 async function showUniversityBooksPanel(ctx) {
+  await showUniversityBooksPage(ctx, 0);
+}
+
+async function showUniversityBooksPage(ctx, requestedPage = 0) {
   const { major, term } = await loadUserAcademicProfile(ctx);
 
   if (!major) {
@@ -746,24 +859,55 @@ async function showUniversityBooksPanel(ctx) {
     return;
   }
 
-  const books = await getUniversityBooksForPanel({ major, term, limit: BOOK_PANEL_LIMIT });
+  const books = await getUniversityBooksForPanel({ major, term, limit: BOOK_PANEL_FETCH_LIMIT });
   const readyBooks = books.filter((item) => Boolean(resolveItemDriveFileId(item)));
 
   if (!readyBooks.length) {
-    await ctx.reply(
+    await sendOrEditInlinePanel(
+      ctx,
       `کتاب های دانشگاه\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\nکتاب قابل دانلودی ثبت نشده.`,
-      universityMenu()
+      Markup.inlineKeyboard([[Markup.button.callback("🔄 بروزرسانی", "bookrf:0")]])
     );
     return;
   }
 
-  const listText = readyBooks.map((item, index) => `${index + 1}. ${item.title}`).join("\n");
-  const message =
-    `کتاب های دانشگاه\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\n` +
-    `${listText}\n\n` +
-    "روی اسم کتاب بزن تا فایل مستقیم داخل تلگرام ارسال شود.";
+  const totalItems = readyBooks.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / BOOK_PANEL_PAGE_SIZE));
+  const safePage = clampInt(requestedPage, 0, totalPages - 1);
+  const start = safePage * BOOK_PANEL_PAGE_SIZE;
+  const pageItems = readyBooks.slice(start, start + BOOK_PANEL_PAGE_SIZE);
 
-  await ctx.reply(message, buildBookPanelKeyboard(readyBooks));
+  const message = buildBookListMessage({
+    major,
+    term,
+    page: safePage,
+    totalPages,
+    totalItems,
+    pageItems
+  });
+  await sendOrEditInlinePanel(ctx, message, buildBookPanelKeyboard(pageItems, safePage, totalPages));
+}
+
+async function showUniversityBookDetailPanel(ctx, contentId, page = 0) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("برای دریافت فایل کتاب، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const item = await getUniversityBookById({ contentId, major, term });
+  if (!item) {
+    await ctx.reply("این کتاب برای پروفایل شما پیدا نشد یا منتشر نیست.", universityMenu());
+    return;
+  }
+
+  const keyboard = buildBookDetailKeyboard({
+    contentId: item.id,
+    page: Math.max(0, Number(page) || 0),
+    canDownload: Boolean(resolveItemDriveFileId(item))
+  });
+  await sendOrEditInlinePanel(ctx, buildBookDetailMessage(item), keyboard);
 }
 
 async function showUniversityKind(ctx, kind, title) {
@@ -3333,10 +3477,70 @@ function registerHandlers(bot) {
     } catch (_error) {
       // ignore answer callback errors
     }
-    await showUniversityBooksPanel(ctx);
+    await showUniversityBooksPage(ctx, 0);
   });
 
-  bot.action(/^bookdl:(\d+)$/, async (ctx) => {
+  bot.action(/^bookrf:(\d+)$/, async (ctx) => {
+    const page = Number(ctx.match?.[1] || 0);
+    try {
+      await ctx.answerCbQuery("لیست به روز شد.");
+    } catch (_error) {
+      // ignore answer callback errors
+    }
+    await showUniversityBooksPage(ctx, page);
+  });
+
+  bot.action(/^bookpg:(\d+)$/, async (ctx) => {
+    const page = Number(ctx.match?.[1] || 0);
+    try {
+      await ctx.answerCbQuery();
+    } catch (_error) {
+      // ignore answer callback errors
+    }
+    await showUniversityBooksPage(ctx, page);
+  });
+
+  bot.action(/^bookbk:(\d+)$/, async (ctx) => {
+    const page = Number(ctx.match?.[1] || 0);
+    try {
+      await ctx.answerCbQuery();
+    } catch (_error) {
+      // ignore answer callback errors
+    }
+    await showUniversityBooksPage(ctx, page);
+  });
+
+  bot.action(/^bookdt:(\d+):(\d+)$/, async (ctx) => {
+    const contentId = Number(ctx.match?.[1]);
+    const page = Number(ctx.match?.[2] || 0);
+
+    if (!contentId) {
+      try {
+        await ctx.answerCbQuery("شناسه کتاب نامعتبر است.");
+      } catch (_error) {
+        // ignore
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery("در حال نمایش جزئیات...");
+    } catch (_error) {
+      // ignore
+    }
+
+    await showUniversityBookDetailPanel(ctx, contentId, page);
+  });
+
+  bot.action("booknoop", async (ctx) => {
+    try {
+      await ctx.answerCbQuery("صفحه فعلی");
+    } catch (_error) {
+      // ignore
+    }
+  });
+
+  bot.action(/^bookdl:(\d+)(?::(\d+))?$/, async (ctx) => {
     const contentId = Number(ctx.match?.[1]);
 
     if (!contentId) {
@@ -3636,6 +3840,7 @@ function registerHandlers(bot) {
 async function attachBot(app) {
   if (!config.telegramBotToken) {
     console.log("TELEGRAM_BOT_TOKEN missing; bot startup skipped.");
+    activeBotInstance = null;
     return null;
   }
 
@@ -3660,6 +3865,7 @@ async function attachBot(app) {
 
     console.log(`Telegram bot webhook set: ${webhookUrl}`);
     logInfo("Telegram bot webhook configured", { webhookUrl, webhookPath });
+    activeBotInstance = bot;
 
     return { bot, mode: "webhook", webhookPath, webhookUrl };
   }
@@ -3667,10 +3873,34 @@ async function attachBot(app) {
   await bot.launch();
   console.log("Telegram bot polling is running.");
   logInfo("Telegram bot polling is running");
+  activeBotInstance = bot;
 
   return { bot, mode: "polling" };
 }
 
+function isBotAvailable() {
+  return Boolean(activeBotInstance);
+}
+
+async function sendTelegramMessage(chatId, text, extra = {}) {
+  if (!activeBotInstance) {
+    throw new Error("Telegram bot is not running");
+  }
+  const normalizedChatId = String(chatId || "").trim();
+  const normalizedText = String(text || "").trim();
+
+  if (!normalizedChatId) {
+    throw new Error("Telegram chat id is required");
+  }
+  if (!normalizedText) {
+    throw new Error("Telegram message text is required");
+  }
+
+  return activeBotInstance.telegram.sendMessage(normalizedChatId, normalizedText, extra);
+}
+
 module.exports = {
-  attachBot
+  attachBot,
+  isBotAvailable,
+  sendTelegramMessage
 };
