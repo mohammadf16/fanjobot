@@ -4,6 +4,7 @@ const { config } = require("../config");
 const { getLogs } = require("../services/logger");
 const { testDriveReadWrite } = require("../services/googleDrive");
 const { isBotAvailable, sendTelegramMessage } = require("../bot");
+const { ensureSupportTables } = require("../services/supportTickets");
 
 const router = express.Router();
 
@@ -224,6 +225,14 @@ function normalizeProfileForUpsert(rawInput, fallback = null) {
 }
 
 router.use(requireAdmin);
+router.use(async (_req, _res, next) => {
+  try {
+    await ensureSupportTables();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/notifications", async (req, res, next) => {
   try {
@@ -258,6 +267,203 @@ router.patch("/notifications/:notificationId", async (req, res, next) => {
 
     if (!updated.rows.length) return res.status(404).json({ error: "Notification not found" });
     res.json({ notification: updated.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/support/tickets", async (req, res, next) => {
+  try {
+    const status = toNullableString(req.query.status);
+    const priority = toNullableString(req.query.priority);
+    const searchText = toNullableString(req.query.q);
+    const search = searchText ? `%${searchText.toLowerCase()}%` : null;
+    const limit = toLimit(req.query.limit, 80, 250);
+
+    const ticketsRes = await query(
+      `SELECT t.*,
+              u.full_name,
+              u.phone_or_email,
+              u.telegram_id,
+              (
+                SELECT m.message_text
+                FROM support_ticket_messages m
+                WHERE m.ticket_id = t.id
+                ORDER BY m.created_at DESC, m.id DESC
+                LIMIT 1
+              ) AS last_message
+       FROM support_tickets t
+       JOIN users u ON u.id = t.user_id
+       WHERE ($1::text IS NULL OR t.status = $1)
+         AND ($2::text IS NULL OR t.priority = $2)
+         AND (
+           $3::text IS NULL
+           OR LOWER(t.subject) LIKE $3
+           OR LOWER(COALESCE(u.full_name, '')) LIKE $3
+           OR LOWER(COALESCE(u.phone_or_email, '')) LIKE $3
+           OR CAST(t.id AS TEXT) LIKE $3
+         )
+       ORDER BY
+         CASE WHEN t.status IN ('open', 'pending') THEN 0 ELSE 1 END,
+         COALESCE(t.last_user_message_at, t.updated_at, t.created_at) DESC,
+         t.id DESC
+       LIMIT $4`,
+      [status, priority, search, limit]
+    );
+
+    const statusSummaryRes = await query(
+      `SELECT status, COUNT(*) AS total
+       FROM support_tickets
+       GROUP BY status
+       ORDER BY COUNT(*) DESC`
+    );
+
+    res.json({
+      items: ticketsRes.rows,
+      summary: statusSummaryRes.rows.map((row) => ({ ...row, total: Number(row.total || 0) })),
+      limit
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/support/tickets/:ticketId", async (req, res, next) => {
+  try {
+    const ticketId = Number(req.params.ticketId);
+    if (!ticketId) return res.status(400).json({ error: "Invalid ticketId" });
+
+    const ticketRes = await query(
+      `SELECT t.*, u.full_name, u.phone_or_email, u.telegram_id
+       FROM support_tickets t
+       JOIN users u ON u.id = t.user_id
+       WHERE t.id = $1
+       LIMIT 1`,
+      [ticketId]
+    );
+    if (!ticketRes.rows.length) return res.status(404).json({ error: "Ticket not found" });
+
+    const messagesRes = await query(
+      `SELECT m.*,
+              u.full_name AS sender_full_name
+       FROM support_ticket_messages m
+       LEFT JOIN users u ON u.id = m.sender_user_id
+       WHERE m.ticket_id = $1
+       ORDER BY m.created_at ASC, m.id ASC`,
+      [ticketId]
+    );
+
+    res.json({
+      ticket: ticketRes.rows[0],
+      messages: messagesRes.rows
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/support/tickets/:ticketId/status", async (req, res, next) => {
+  try {
+    const ticketId = Number(req.params.ticketId);
+    const status = toNullableString(req.body?.status);
+    const note = toNullableString(req.body?.note);
+    if (!ticketId || !status) return res.status(400).json({ error: "ticketId and status are required" });
+    if (!["open", "pending", "answered", "closed"].includes(status)) {
+      return res.status(400).json({ error: "Invalid ticket status" });
+    }
+
+    const updated = await query(
+      `UPDATE support_tickets
+       SET status = $1,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [status, ticketId]
+    );
+    if (!updated.rows.length) return res.status(404).json({ error: "Ticket not found" });
+
+    if (note) {
+      const adminIdRaw = toNullableString(req.headers["x-admin-id"]);
+      const senderUserId = Number(adminIdRaw);
+      await query(
+        `INSERT INTO support_ticket_messages
+         (ticket_id, sender_role, sender_user_id, message_text)
+         VALUES ($1, 'admin', $2, $3)`,
+        [ticketId, Number.isFinite(senderUserId) ? senderUserId : null, note]
+      );
+    }
+
+    res.json({ ticket: updated.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/support/tickets/:ticketId/reply", async (req, res, next) => {
+  try {
+    const ticketId = Number(req.params.ticketId);
+    const message = toNullableString(req.body?.message);
+    const requestedStatus = toNullableString(req.body?.status);
+    if (!ticketId || !message) return res.status(400).json({ error: "ticketId and message are required" });
+
+    const status = requestedStatus || "answered";
+    if (!["open", "pending", "answered", "closed"].includes(status)) {
+      return res.status(400).json({ error: "Invalid ticket status" });
+    }
+
+    const ticketRes = await query(`SELECT * FROM support_tickets WHERE id = $1 LIMIT 1`, [ticketId]);
+    if (!ticketRes.rows.length) return res.status(404).json({ error: "Ticket not found" });
+    const ticket = ticketRes.rows[0];
+
+    const adminIdRaw = toNullableString(req.headers["x-admin-id"]);
+    const senderUserId = Number(adminIdRaw);
+
+    const insertedMessage = await query(
+      `INSERT INTO support_ticket_messages
+       (ticket_id, sender_role, sender_user_id, message_text)
+       VALUES ($1, 'admin', $2, $3)
+       RETURNING *`,
+      [ticketId, Number.isFinite(senderUserId) ? senderUserId : null, message]
+    );
+
+    const updatedTicket = await query(
+      `UPDATE support_tickets
+       SET status = $1,
+           last_admin_reply_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [status, ticketId]
+    );
+
+    await createNotification({
+      type: "support-ticket-admin-reply",
+      title: "Support ticket replied",
+      message: `Ticket #${ticketId} received an admin reply`,
+      payload: { ticketId, userId: ticket.user_id, status }
+    });
+
+    const notifyText = [
+      "پاسخ پشتیبانی فنجو",
+      "",
+      `تیکت #${ticketId}`,
+      `موضوع: ${ticket.subject || "-"}`,
+      `وضعیت: ${status}`,
+      "",
+      message
+    ].join("\n");
+
+    const notify = await notifyTelegramUser(ticket.user_id, notifyText, {
+      ticketId,
+      source: "support-admin-reply",
+      status
+    });
+
+    res.json({
+      ticket: updatedTicket.rows[0],
+      message: insertedMessage.rows[0],
+      notify
+    });
   } catch (error) {
     next(error);
   }
@@ -466,6 +672,8 @@ router.get("/dashboard/overview", async (req, res, next) => {
          (SELECT COUNT(*) FROM industry_applications) AS total_applications,
          (SELECT COUNT(*) FROM community_content_submissions) AS total_submissions,
          (SELECT COUNT(*) FROM community_content_submissions WHERE status = 'pending') AS pending_submissions,
+         (SELECT COUNT(*) FROM support_tickets) AS total_support_tickets,
+         (SELECT COUNT(*) FROM support_tickets WHERE status IN ('open', 'pending')) AS open_support_tickets,
          (SELECT COUNT(*) FROM users WHERE COALESCE(telegram_id, '') <> '') AS bot_started_users,
          (SELECT COUNT(*) FROM admin_notifications WHERE status = 'open') AS open_notifications`
     );

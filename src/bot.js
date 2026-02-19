@@ -5,6 +5,7 @@ const { config } = require("./config");
 const { query } = require("./db");
 const { uploadBufferToDrive, downloadDriveFileToPath } = require("./services/googleDrive");
 const { logInfo, logError } = require("./services/logger");
+const { ensureSupportTables } = require("./services/supportTickets");
 const {
   buildSkillMap,
   levelToNumber,
@@ -17,6 +18,7 @@ const {
 const profileSessions = new Map();
 const submissionSessions = new Map();
 const pathSessions = new Map();
+const supportTicketSessions = new Map();
 const bookDownloadLocks = new Map();
 
 const BOOK_CACHE_DIR = path.join(process.cwd(), "tmp", "telegram-book-cache");
@@ -32,6 +34,7 @@ const LABEL_PROFILE = "🧾 تکمیل پروفایل";
 const LABEL_UNIVERSITY = "🏫 دانشگاه";
 const LABEL_INDUSTRY = "🏭 صنعت";
 const LABEL_MY_PATH = "🧭 مسیر من";
+const LABEL_SUPPORT = "🎫 پشتیبانی";
 
 const MAJOR_FAMILIES = [
   "مهندسی صنایع",
@@ -224,7 +227,7 @@ function mainMenu() {
   return Markup.keyboard([
     [LABEL_START, LABEL_PROFILE],
     [LABEL_UNIVERSITY, LABEL_INDUSTRY],
-    [LABEL_MY_PATH]
+    [LABEL_MY_PATH, LABEL_SUPPORT]
   ]).resize();
 }
 
@@ -1315,6 +1318,115 @@ async function handleSubmissionWizardInput(ctx) {
   session.stepIndex += 1;
   submissionSessions.set(key, session);
   await askSubmissionStep(ctx, session);
+  return true;
+}
+
+async function askSupportTicketStep(ctx, session) {
+  if (session.stepIndex === 0) {
+    await ctx.reply(
+      "موضوع تیکت را بنویس (حداقل 4 کاراکتر).",
+      Markup.keyboard([["لغو"]]).resize()
+    );
+    return;
+  }
+
+  await ctx.reply(
+    "شرح کامل مشکل یا سوال را بنویس (حداقل 8 کاراکتر).",
+    Markup.keyboard([["لغو"]]).resize()
+  );
+}
+
+async function startSupportTicketWizard(ctx) {
+  const userId = await ensureUser(ctx);
+  await ensureSupportTables();
+
+  supportTicketSessions.set(getSessionKey(ctx), {
+    userId,
+    stepIndex: 0,
+    subject: null
+  });
+
+  await ctx.reply("فرم پشتیبانی شروع شد. هر زمان خواستی «لغو» بزن.");
+  await askSupportTicketStep(ctx, supportTicketSessions.get(getSessionKey(ctx)));
+}
+
+async function saveSupportTicketFromBot(session, messageText) {
+  const insertedTicket = await query(
+    `INSERT INTO support_tickets
+     (user_id, subject, status, priority, category, last_user_message_at, updated_at)
+     VALUES ($1, $2, 'open', 'normal', 'telegram-bot', NOW(), NOW())
+     RETURNING *`,
+    [session.userId, session.subject]
+  );
+
+  const ticket = insertedTicket.rows[0];
+  await query(
+    `INSERT INTO support_ticket_messages
+     (ticket_id, sender_role, sender_user_id, message_text)
+     VALUES ($1, 'user', $2, $3)`,
+    [ticket.id, session.userId, messageText]
+  );
+
+  await query(
+    `INSERT INTO admin_notifications
+     (type, title, message, payload, status)
+     VALUES ('support-ticket-opened', $1, $2, $3::jsonb, 'open')`,
+    [
+      "New support ticket",
+      `${session.subject} (user #${session.userId})`,
+      JSON.stringify({ ticketId: ticket.id, userId: session.userId, source: "telegram-bot" })
+    ]
+  );
+
+  return ticket;
+}
+
+async function handleSupportTicketInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = supportTicketSessions.get(key);
+  if (!session) return false;
+
+  const text = String(ctx.message?.text || "").trim();
+  if (text === "لغو") {
+    supportTicketSessions.delete(key);
+    await ctx.reply("درخواست پشتیبانی لغو شد.", mainMenu());
+    return true;
+  }
+
+  if (session.stepIndex === 0) {
+    if (text.length < 4) {
+      await ctx.reply("موضوع کوتاه است. حداقل 4 کاراکتر بنویس.");
+      return true;
+    }
+    session.subject = text;
+    session.stepIndex = 1;
+    supportTicketSessions.set(key, session);
+    await askSupportTicketStep(ctx, session);
+    return true;
+  }
+
+  if (text.length < 8) {
+    await ctx.reply("شرح پیام کوتاه است. حداقل 8 کاراکتر بنویس.");
+    return true;
+  }
+
+  try {
+    const saved = await saveSupportTicketFromBot(session, text);
+    supportTicketSessions.delete(key);
+    logInfo("Support ticket created from bot", { ticketId: saved.id, userId: session.userId });
+    await ctx.reply(
+      `تیکت شما ثبت شد ✅\nشناسه تیکت: #${saved.id}\nبه زودی پاسخ پشتیبانی ارسال می‌شود.`,
+      mainMenu()
+    );
+  } catch (error) {
+    supportTicketSessions.delete(key);
+    logError("Support ticket create from bot failed", {
+      error: error?.message || String(error),
+      userId: session.userId
+    });
+    await ctx.reply("ثبت تیکت انجام نشد. دوباره تلاش کن.", mainMenu());
+  }
+
   return true;
 }
 
@@ -3572,6 +3684,9 @@ function registerHandlers(bot) {
       ctx.message.text = normalizeMenuText(ctx.message.text);
     }
 
+    const handledSupport = await handleSupportTicketInput(ctx);
+    if (handledSupport) return;
+
     const handledSubmission = await handleSubmissionWizardInput(ctx);
     if (handledSubmission) return;
 
@@ -3684,6 +3799,10 @@ function registerHandlers(bot) {
 
   bot.hears("منابع صنعتی", async (ctx) => {
     await showIndustryLearningLibraryModule(ctx);
+  });
+
+  bot.hears("پشتیبانی", async (ctx) => {
+    await startSupportTicketWizard(ctx);
   });
 
   bot.hears(/^جزئیات فرصت\s+(\d+)$/, async (ctx) => {

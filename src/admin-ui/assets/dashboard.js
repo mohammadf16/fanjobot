@@ -6,7 +6,8 @@
     queue: {
       submissions: [],
       opportunities: [],
-      notifications: []
+      notifications: [],
+      supportTickets: []
     }
   };
 
@@ -33,6 +34,12 @@
         value: Number((overview || {}).open_notifications || 0),
         note: "Unresolved admin notifications",
         tone: Number((overview || {}).open_notifications || 0) > 0 ? "warn" : "ok"
+      },
+      {
+        label: "Open Tickets",
+        value: Number((overview || {}).open_support_tickets || 0),
+        note: "Open or pending support tickets",
+        tone: Number((overview || {}).open_support_tickets || 0) > 0 ? "warn" : "ok"
       },
       {
         label: "Bot Started Users",
@@ -79,6 +86,8 @@
       ["Applications", "total_applications"],
       ["Submissions", "total_submissions"],
       ["Pending Subs", "pending_submissions"],
+      ["Tickets", "total_support_tickets"],
+      ["Open Tickets", "open_support_tickets"],
       ["Open Notifs", "open_notifications"]
     ];
 
@@ -131,10 +140,22 @@
       });
     }
 
+    if (type === "support") {
+      return (lastPayload.queue.supportTickets || []).map(function (item) {
+        return {
+          title: "Ticket #" + item.id,
+          meta: item.subject || "-",
+          href: "/admin/support",
+          status: item.status || "open"
+        };
+      });
+    }
+
     return []
       .concat(queueItemsByType("submission"))
       .concat(queueItemsByType("opportunity"))
-      .concat(queueItemsByType("notification"));
+      .concat(queueItemsByType("notification"))
+      .concat(queueItemsByType("support"));
   }
 
   function renderQuickQueue() {
@@ -247,13 +268,18 @@
     var queueData = await Promise.all([
       AdminCore.api("/api/admin/moderation/submissions?status=pending&limit=8"),
       AdminCore.api("/api/admin/industry/opportunities?approvalStatus=pending&limit=8"),
-      AdminCore.api("/api/admin/notifications?status=open&limit=8")
+      AdminCore.api("/api/admin/notifications?status=open&limit=8"),
+      AdminCore.api("/api/admin/support/tickets?limit=16")
     ]);
 
     lastPayload.queue = {
       submissions: queueData[0].items || [],
       opportunities: queueData[1].items || [],
-      notifications: queueData[2].items || []
+      notifications: queueData[2].items || [],
+      supportTickets: (queueData[3].items || []).filter(function (item) {
+        var st = String(item.status || "").toLowerCase();
+        return st === "open" || st === "pending";
+      })
     };
     renderQuickQueue();
 

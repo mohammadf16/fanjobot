@@ -4,7 +4,7 @@ const { config } = require("../config");
 
 const router = express.Router();
 const assetsDir = path.join(__dirname, "..", "admin-ui", "assets");
-const assetVersion = "20260219-4";
+const assetVersion = "20260219-5";
 
 function escapeAttr(value) {
   return String(value || "")
@@ -30,6 +30,7 @@ const navItems = [
   { key: "content", label: "Content", href: "/admin/content" },
   { key: "projects", label: "Projects & Ops", href: "/admin/projects" },
   { key: "integrations", label: "Integrations", href: "/admin/integrations" },
+  { key: "support", label: "Support Tickets", href: "/admin/support" },
   { key: "logs", label: "Logs & Runtime", href: "/admin/logs" }
 ];
 
@@ -153,6 +154,7 @@ const dashboardContent = `
           <option value="submission">submissions</option>
           <option value="opportunity">opportunities</option>
           <option value="notification">notifications</option>
+          <option value="support">support tickets</option>
         </select>
       </div>
     </div>
@@ -487,6 +489,63 @@ const integrationsContent = `
 </section>
 `;
 
+const supportContent = `
+<section class="card">
+  <div class="section-head">
+    <h3>Support Tickets</h3>
+    <div class="toolbar">
+      <select id="supportStatusInput">
+        <option value="">all</option>
+        <option value="open">open</option>
+        <option value="pending">pending</option>
+        <option value="answered">answered</option>
+        <option value="closed">closed</option>
+      </select>
+      <select id="supportPriorityInput">
+        <option value="">all priorities</option>
+        <option value="urgent">urgent</option>
+        <option value="high">high</option>
+        <option value="normal">normal</option>
+        <option value="low">low</option>
+      </select>
+      <input id="supportSearchInput" placeholder="search subject/user/id" />
+      <button id="supportLoadBtn" class="btn">Load</button>
+      <button id="supportExportBtn" class="btn ghost">Export CSV</button>
+    </div>
+  </div>
+  <div id="supportSummaryChips" class="chip-row"></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Status</th><th>Priority</th><th>Subject</th><th>User</th><th>Updated</th><th>Action</th></tr></thead>
+      <tbody id="supportTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="grid-2">
+  <article class="card">
+    <h3>Ticket Detail</h3>
+    <pre id="supportDetailBox" class="codebox">Select a ticket...</pre>
+  </article>
+  <article class="card">
+    <div class="section-head">
+      <h3>Admin Reply</h3>
+      <div class="toolbar">
+        <select id="supportReplyStatusInput">
+          <option value="answered">answered</option>
+          <option value="pending">pending</option>
+          <option value="closed">closed</option>
+          <option value="open">open</option>
+        </select>
+        <button id="supportReplyBtn" class="btn">Send Reply</button>
+      </div>
+    </div>
+    <textarea id="supportReplyInput" class="message-box" placeholder="Write support answer for selected ticket..."></textarea>
+    <div id="supportMetaBox" class="meta-text">No ticket selected.</div>
+  </article>
+</section>
+`;
+
 const logsContent = `
 <section class="card">
   <div class="section-head">
@@ -618,6 +677,19 @@ router.get("/admin/integrations", (_req, res) => {
       activeNav: "integrations",
       content: integrationsContent,
       scriptName: "integrations.js"
+    })
+  );
+});
+
+router.get("/admin/support", (_req, res) => {
+  res.type("html").send(
+    renderPage({
+      title: "Fanjobo Admin | Support",
+      heading: "Support Tickets",
+      subtitle: "Handle user tickets and send replies directly from admin panel",
+      activeNav: "support",
+      content: supportContent,
+      scriptName: "support.js"
     })
   );
 });
