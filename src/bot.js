@@ -489,6 +489,28 @@ function getSubmissionKindByLabel(label) {
   return null;
 }
 
+function getSubmissionKindByKeyword(label) {
+  const raw = String(label || "").trim();
+  if (!raw) return null;
+
+  const normalized = raw
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ي/g, "ی")
+    .replace(/ك/g, "ک")
+    .toLowerCase();
+
+  if (normalized.includes("درس")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "course") || null;
+  if (normalized.includes("استاد")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "professor") || null;
+  if (normalized.includes("جزوه")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "note") || null;
+  if (normalized.includes("کتاب")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "book") || null;
+  if (normalized.includes("منبع")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "resource") || null;
+  if (normalized.includes("نکات") || normalized.includes("امتحان")) {
+    return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "exam-tip") || null;
+  }
+
+  return null;
+}
+
 function submissionKindKeyboard() {
   const options = UNIVERSITY_SUBMISSION_KINDS.map((item) => item.label);
   return Markup.keyboard([
@@ -561,7 +583,7 @@ function parseSubmissionStepValue(step, text) {
   }
 
   if (step.key === "contentKind") {
-    const kind = getSubmissionKindByLabel(raw);
+    const kind = getSubmissionKindByLabel(raw) || getSubmissionKindByKeyword(raw);
     if (!kind) return { ok: false, message: "نوع محتوا را از دکمه ها انتخاب کن." };
     return { ok: true, value: { contentKind: kind.key, contentKindLabel: kind.label } };
   }
