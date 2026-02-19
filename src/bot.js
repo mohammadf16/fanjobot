@@ -833,9 +833,9 @@ async function attachBot(app) {
     const webhookPath = buildWebhookPath();
     const webhookUrl = buildWebhookUrl(webhookPath);
 
-    // Handle Telegram updates only on exact webhook path; callback path filter
-    // is omitted to avoid framework-specific URL rewriting mismatches.
-    app.post(webhookPath, bot.webhookCallback());
+    // Telegraf compares req.url with the provided webhook path. Keep route and
+    // callback path aligned to avoid false 404 responses.
+    app.post(webhookPath, bot.webhookCallback(webhookPath));
     await bot.telegram.setWebhook(webhookUrl);
 
     console.log(`Telegram bot webhook set: ${webhookUrl}`);
