@@ -109,10 +109,10 @@ function wait(ms) {
 
 function formatSupportStatusFa(status) {
   const map = {
-    open: "???",
-    pending: "?? ??????",
-    answered: "???? ???? ???",
-    closed: "????"
+    open: "باز",
+    pending: "در انتظار",
+    answered: "پاسخ داده شده",
+    closed: "بسته"
   };
   return map[String(status || "").toLowerCase()] || String(status || "-");
 }
