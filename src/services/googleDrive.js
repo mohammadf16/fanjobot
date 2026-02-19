@@ -96,6 +96,28 @@ function resolveParentFolder(contentType) {
   return config.driveRootFolderId;
 }
 
+async function ensureParentFolderAccessible(drive, folderId) {
+  if (!folderId) {
+    throw new Error("Drive folder id is missing. Set DRIVE_ROOT_FOLDER_ID (or section folder id).");
+  }
+
+  try {
+    await drive.files.get({
+      fileId: folderId,
+      fields: "id,name,mimeType",
+      supportsAllDrives: true
+    });
+  } catch (error) {
+    const status = error?.code || error?.response?.status;
+    if (status === 404) {
+      throw new Error(
+        `Drive folder not found or inaccessible: ${folderId}. Share folder with service account and verify folder id.`
+      );
+    }
+    throw error;
+  }
+}
+
 async function uploadBufferToDrive({
   fileBuffer,
   fileName,
@@ -105,6 +127,7 @@ async function uploadBufferToDrive({
 }) {
   const drive = await getDriveClient();
   const parentFolderId = resolveParentFolder(contentType);
+  await ensureParentFolderAccessible(drive, parentFolderId);
 
   const createRes = await drive.files.create({
     requestBody: {
@@ -115,6 +138,7 @@ async function uploadBufferToDrive({
       mimeType,
       body: Readable.from(Buffer.from(fileBuffer))
     },
+    supportsAllDrives: true,
     fields: "id,name,webViewLink"
   });
 
@@ -126,13 +150,15 @@ async function uploadBufferToDrive({
       requestBody: {
         role: "reader",
         type: "anyone"
-      }
+      },
+      supportsAllDrives: true
     });
   }
 
   const metadata = await drive.files.get({
     fileId,
-    fields: "id,name,webViewLink,webContentLink"
+    fields: "id,name,webViewLink,webContentLink",
+    supportsAllDrives: true
   });
 
   return {
