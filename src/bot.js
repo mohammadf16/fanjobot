@@ -197,7 +197,7 @@ const UNIVERSITY_SUBMISSION_STEPS = [
   },
   {
     key: "fileUpload",
-    question: "فایل محتوا را آپلود کن (PDF/DOCX/ZIP/عکس)."
+    question: "فایل محتوا را فقط به صورت PDF آپلود کن."
   },
   {
     key: "tags",
@@ -633,20 +633,19 @@ async function saveUniversitySubmission(session) {
 function extractSubmissionFile(ctx) {
   const doc = ctx.message?.document;
   if (doc) {
+    const fileName = String(doc.file_name || `telegram-file-${Date.now()}`).trim();
+    const mimeType = String(doc.mime_type || "").toLowerCase();
+    const isPdfMime = mimeType === "application/pdf";
+    const isPdfExt = /\.pdf$/i.test(fileName);
+
+    if (!isPdfMime && !isPdfExt) {
+      return { invalidPdf: true };
+    }
+
     return {
       fileId: doc.file_id,
-      fileName: doc.file_name || `telegram-file-${Date.now()}`,
-      mimeType: doc.mime_type || "application/octet-stream"
-    };
-  }
-
-  const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
-  if (photos.length) {
-    const best = photos[photos.length - 1];
-    return {
-      fileId: best.file_id,
-      fileName: `telegram-photo-${Date.now()}.jpg`,
-      mimeType: "image/jpeg"
+      fileName,
+      mimeType: "application/pdf"
     };
   }
 
@@ -662,8 +661,12 @@ async function handleSubmissionWizardMediaInput(ctx) {
   if (!step || step.key !== "fileUpload") return false;
 
   const media = extractSubmissionFile(ctx);
+  if (media?.invalidPdf) {
+    await ctx.reply("فقط فایل PDF مجاز است. لطفا فایل را به صورت document با پسوند .pdf ارسال کن.");
+    return true;
+  }
   if (!media) {
-    await ctx.reply("فایل معتبر نیست. لطفا فایل را به صورت document یا photo بفرست.");
+    await ctx.reply("فایل معتبر نیست. فقط PDF به صورت document ارسال کن.");
     return true;
   }
 
@@ -727,7 +730,7 @@ async function handleSubmissionWizardInput(ctx) {
   }
 
   if (step.key === "fileUpload") {
-    await ctx.reply("در این مرحله باید فایل را ارسال کنی (document/photo).");
+    await ctx.reply("در این مرحله باید فایل PDF را به صورت document ارسال کنی.");
     return true;
   }
 
@@ -2925,7 +2928,7 @@ async function handleProfileWizardInput(ctx) {
 }
 
 function registerHandlers(bot) {
-  bot.on(["document", "photo"], async (ctx, next) => {
+  bot.on("document", async (ctx, next) => {
     const handledMedia = await handleSubmissionWizardMediaInput(ctx);
     if (handledMedia) return;
     return next();
