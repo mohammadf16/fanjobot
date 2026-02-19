@@ -107,18 +107,18 @@ function wait(ms) {
 function buildSubmissionDecisionMessage(submission, action, reason) {
   const approved = action === "approve";
   const lines = [
-    "Fanjobo moderation update",
+    "به روزرسانی بررسی محتوا - فنجوبو",
     "",
-    `Title: ${submission.title || "-"}`,
-    `Result: ${approved ? "Approved" : "Rejected"}`
+    `عنوان: ${submission.title || "-"}`,
+    `نتیجه: ${approved ? "تایید شد" : "رد شد"}`
   ];
 
   const normalizedReason = toNullableString(reason);
   if (normalizedReason) {
-    lines.push(`Reason: ${normalizedReason}`);
+    lines.push(`دلیل: ${normalizedReason}`);
   }
 
-  lines.push("", "Open the bot and continue from the University menu.");
+  lines.push("", "برای مشاهده جزئیات وارد ربات فنجوبو شوید.");
   return lines.join("\n");
 }
 
@@ -188,79 +188,127 @@ async function notifySubmissionDecision(submission, action, reason) {
 
 function formatSupportStatus(status) {
   const map = {
-    open: "Open",
-    pending: "Pending",
-    answered: "Answered",
-    closed: "Closed"
+    open: "باز",
+    pending: "در انتظار",
+    answered: "پاسخ داده شده",
+    closed: "بسته"
   };
   return map[String(status || "").toLowerCase()] || String(status || "-");
 }
 
 function formatIndustryApplicationStatus(status) {
   const map = {
-    draft: "Draft",
-    submitted: "Submitted",
-    viewed: "Viewed",
-    interview: "Interview",
-    rejected: "Rejected",
-    accepted: "Accepted"
+    draft: "پیش نویس",
+    submitted: "ارسال شده",
+    viewed: "بررسی اولیه",
+    interview: "مصاحبه",
+    rejected: "رد شده",
+    accepted: "پذیرفته شده"
+  };
+  return map[String(status || "").toLowerCase()] || String(status || "-");
+}
+
+function formatGenericStatusFa(status) {
+  const map = {
+    open: "باز",
+    closed: "بسته",
+    pending: "در انتظار",
+    approved: "تایید شده",
+    rejected: "رد شده",
+    answered: "پاسخ داده شده",
+    submitted: "ارسال شده",
+    viewed: "بررسی اولیه",
+    interview: "مصاحبه",
+    accepted: "پذیرفته شده",
+    draft: "پیش نویس",
+    in_progress: "در حال انجام",
+    completed: "تکمیل شده",
+    paused: "متوقف"
   };
   return map[String(status || "").toLowerCase()] || String(status || "-");
 }
 
 function buildSupportStatusUpdateMessage(ticket, status, note) {
   const lines = [
-    "Fanjobo support update",
+    "به روزرسانی تیکت پشتیبانی",
     "",
-    `Ticket #${ticket.id}`,
-    `Subject: ${ticket.subject || "-"}`,
-    `Status: ${formatSupportStatus(status)}`
+    `تیکت #${ticket.id}`,
+    `موضوع: ${ticket.subject || "-"}`,
+    `وضعیت: ${formatSupportStatus(status)}`
   ];
 
   const normalizedNote = toNullableString(note);
   if (normalizedNote) {
-    lines.push("", `Admin note: ${normalizedNote}`);
+    lines.push("", `یادداشت ادمین: ${normalizedNote}`);
   }
 
-  lines.push("", "Open the bot support panel for more details.");
+  lines.push("", "برای جزئیات بیشتر وارد پنل پشتیبانی ربات شوید.");
   return lines.join("\n");
 }
 
 function buildIndustryApplicationStatusMessage(application, status) {
   return [
-    "Fanjobo industry application update",
+    "به روزرسانی درخواست صنعتی",
     "",
-    `Application #${application.id}`,
-    `Opportunity: ${application.opportunity_title || "-"}`,
-    `Status: ${formatIndustryApplicationStatus(status)}`,
+    `درخواست #${application.id}`,
+    `فرصت: ${application.opportunity_title || "-"}`,
+    `وضعیت: ${formatIndustryApplicationStatus(status)}`,
     "",
-    "Open the bot Industry panel to review your requests."
+    "برای مشاهده جزئیات وارد پنل صنعت در ربات شوید."
   ].join("\n");
 }
 
 function buildIndustryOpportunityUpdateMessage(opportunity, status, approvalStatus) {
   const lines = [
-    "Fanjobo opportunity update",
+    "به روزرسانی فرصت صنعتی",
     "",
-    `Opportunity #${opportunity.id}`,
-    `Title: ${opportunity.title || "-"}`,
-    `Status: ${String(status || opportunity.status || "-")}`,
-    `Approval: ${String(approvalStatus || opportunity.approval_status || "-")}`,
+    `فرصت #${opportunity.id}`,
+    `عنوان: ${opportunity.title || "-"}`,
+    `وضعیت: ${formatGenericStatusFa(status || opportunity.status || "-")}`,
+    `وضعیت تایید: ${formatGenericStatusFa(approvalStatus || opportunity.approval_status || "-")}`,
     "",
-    "Open the bot Industry panel to review available opportunities."
+    "برای دیدن وضعیت جدید وارد پنل صنعت ربات شوید."
   ];
   return lines.join("\n");
 }
 
 function buildIndustryProjectUpdateMessage(project, status) {
   return [
-    "Fanjobo project update",
+    "به روزرسانی پروژه صنعتی",
     "",
-    `Project #${project.id}`,
-    `Title: ${project.title || "-"}`,
-    `Status: ${String(status || project.status || "-")}`,
+    `پروژه #${project.id}`,
+    `عنوان: ${project.title || "-"}`,
+    `وضعیت: ${formatGenericStatusFa(status || project.status || "-")}`,
     "",
-    "Open the bot Industry panel to review your active projects."
+    "برای پیگیری پروژه وارد پنل صنعت ربات شوید."
+  ].join("\n");
+}
+
+function buildSupportAdminReplyMessage(ticketId, subject, status, message) {
+  return [
+    "پاسخ پشتیبانی فنجوبو",
+    "",
+    `تیکت #${ticketId}`,
+    `موضوع: ${subject || "-"}`,
+    `وضعیت: ${formatSupportStatus(status)}`,
+    "",
+    message
+  ].join("\n");
+}
+
+function buildUserBroadcastText(message) {
+  return `📢 پیام ادمین فنجوبو\n\n${message}`;
+}
+
+function buildContentPublishStatusMessage(contentId, title, isPublished) {
+  return [
+    "به روزرسانی وضعیت محتوا",
+    "",
+    `محتوا #${contentId}`,
+    `عنوان: ${title || "-"}`,
+    `انتشار: ${isPublished ? "منتشر شد" : "از انتشار خارج شد"}`,
+    "",
+    "برای دیدن آخرین وضعیت وارد ربات فنجوبو شوید."
   ].join("\n");
 }
 
@@ -588,15 +636,7 @@ router.post("/support/tickets/:ticketId/reply", async (req, res, next) => {
       payload: { ticketId, userId: ticket.user_id, status }
     });
 
-    const notifyText = [
-      "پاسخ پشتیبانی فنجو",
-      "",
-      `تیکت #${ticketId}`,
-      `موضوع: ${ticket.subject || "-"}`,
-      `وضعیت: ${status}`,
-      "",
-      message
-    ].join("\n");
+    const notifyText = buildSupportAdminReplyMessage(ticketId, ticket.subject, status, message);
 
     const notify = await notifyTelegramUser(ticket.user_id, notifyText, {
       ticketId,
@@ -737,7 +777,7 @@ router.post("/broadcast/send", async (req, res, next) => {
       });
     }
 
-    const outboundText = `\uD83D\uDCE2 Message from Fanjobo admin\n\n${message}`;
+    const outboundText = buildUserBroadcastText(message);
     let sentCount = 0;
     let failedCount = 0;
     const failures = [];
@@ -1981,15 +2021,7 @@ router.patch("/content/:contentId/publish", async (req, res, next) => {
 
     if (!updated.rows.length) return res.status(404).json({ error: "Content not found" });
 
-    const notifyText = [
-      "Fanjobo content status update",
-      "",
-      `Content #${contentId}`,
-      `Title: ${before.title || "-"}`,
-      `Published: ${isPublished ? "Yes" : "No"}`,
-      "",
-      "Open the bot University/Industry panel for latest content."
-    ].join("\n");
+    const notifyText = buildContentPublishStatusMessage(contentId, before.title, isPublished);
 
     const notify = await notifyTelegramUser(before.created_by_user_id, notifyText, {
       source: "content-publish-status",
@@ -2183,3 +2215,4 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
 });
 
 module.exports = router;
+

@@ -2281,6 +2281,16 @@ function formatSupportTicketRow(item) {
   return `#${item.id} | ${item.status} | ${item.priority}\n${item.subject}\n${item.full_name || "-"} | ${updatedLabel}`;
 }
 
+function formatSupportStatusFa(status) {
+  const map = {
+    open: "باز",
+    pending: "در انتظار",
+    answered: "پاسخ داده شده",
+    closed: "بسته"
+  };
+  return map[String(status || "").toLowerCase()] || String(status || "نامشخص");
+}
+
 async function listSupportTicketsForAdmin(ctx) {
   if (!(await ensureSupportAdminAccess(ctx))) return;
   await ensureSupportTables();
@@ -2401,7 +2411,7 @@ async function replySupportTicketFromAdminBot(ctx, ticketId, messageText, status
       "",
       `تیکت #${ticketId}`,
       `موضوع: ${ticket.subject || "-"}`,
-      `وضعیت: ${status}`,
+      `وضعیت: ${formatSupportStatusFa(status)}`,
       "",
       messageText
     ].join("\n");
@@ -2413,7 +2423,7 @@ async function replySupportTicketFromAdminBot(ctx, ticketId, messageText, status
     }
   }
 
-  await ctx.reply(`پاسخ برای تیکت #${ticketId} ثبت شد.\nوضعیت: ${status}\nنوتیف کاربر: ${userNotify}`);
+  await ctx.reply(`پاسخ برای تیکت #${ticketId} ثبت شد.\nوضعیت: ${formatSupportStatusFa(status)}\nنوتیف کاربر: ${userNotify}`);
 }
 
 async function closeSupportTicketFromAdminBot(ctx, ticketId) {
@@ -2453,7 +2463,7 @@ async function closeSupportTicketFromAdminBot(ctx, ticketId) {
       "",
       `تیکت #${ticketId}`,
       `موضوع: ${ticket.subject || "-"}`,
-      "وضعیت: closed"
+      `وضعیت: ${formatSupportStatusFa("closed")}`
     ].join("\n");
     try {
       await sendTelegramMessage(ticket.telegram_id, notifyText);
