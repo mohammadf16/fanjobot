@@ -56,7 +56,15 @@ function createDriveClient() {
   return google.drive({ version: "v3", auth });
 }
 
-const drive = createDriveClient();
+let driveClient = null;
+
+function getDriveClient() {
+  if (!driveClient) {
+    driveClient = createDriveClient();
+  }
+
+  return driveClient;
+}
 
 function resolveParentFolder(contentType) {
   if (contentType === "university" && config.driveUniversityFolderId) {
@@ -77,6 +85,7 @@ async function uploadBufferToDrive({
   contentType,
   makePublic = false
 }) {
+  const drive = getDriveClient();
   const parentFolderId = resolveParentFolder(contentType);
 
   const createRes = await drive.files.create({
