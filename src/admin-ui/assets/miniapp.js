@@ -40,14 +40,15 @@
   };
 
   var TAB_ITEMS = [
-    { key: "dashboard", label: "داشبورد" },
-    { key: "profile", label: "پروفایل" },
-    { key: "university", label: "دانشگاه" },
-    { key: "industry", label: "صنعت" },
-    { key: "path", label: "مسیر من" },
-    { key: "support", label: "پشتیبانی" },
-    { key: "submissions", label: "آپلودها" },
-    { key: "admin", label: "ادمین" }
+    { key: "dashboard", label: "📊 داشبورد" },
+    { key: "profile", label: "👨‍💼 پروفایل" },
+    { key: "university", label: "🎓 دانشگاه" },
+    { key: "industry", label: "💼 صنعت" },
+    { key: "path", label: "🗺️ مسیر من" },
+    { key: "support", label: "💬 پشتیبانی" },
+    { key: "submissions", label: "📤 آپلودها" },
+    { key: "settings", label: "⚙️ تنظیمات" },
+    { key: "admin", label: "👑 ادمین" }
   ];
 
   function el(id) {
@@ -155,7 +156,29 @@
   }
 
   function onError(error) {
-    toast(error.message || "Error", "bad");
+    toast(error.message || "خطا", "bad");
+  }
+
+  function showLoading(elementId) {
+    var el = document.getElementById(elementId);
+    if (el) {
+      el.classList.add("loading");
+      el.innerHTML = "<div style='text-align: center; padding: 20px;'><div class='spinner' style='display: inline-block;'></div><p style='margin-top: 10px; color: var(--text-secondary);'>در حال بارگیری...</p></div>";
+    }
+  }
+
+  function hideLoading(elementId) {
+    var el = document.getElementById(elementId);
+    if (el) {
+      el.classList.remove("loading");
+    }
+  }
+
+  function showEmptyState(elementId, icon, title, text) {
+    var el = document.getElementById(elementId);
+    if (el) {
+      el.innerHTML = "<div class='empty-state'><div class='empty-state-icon'>" + icon + "</div><div class='empty-state-title'>" + title + "</div><div class='empty-state-text'>" + text + "</div></div>";
+    }
   }
 
   function ensureUser() {
@@ -220,6 +243,7 @@
     if (key === "path") loadPath().catch(onError);
     if (key === "support") loadSupportTickets().catch(onError);
     if (key === "submissions") loadMySubmissions().catch(onError);
+    if (key === "settings") buildSettingsForm();
     if (key === "admin" && state.isAdmin) {
       Promise.all([loadAdminOverview(), loadAdminSupportTickets(), loadAdminSubmissions()]).catch(onError);
     }
@@ -346,6 +370,42 @@
     state.profile = Object.assign({}, state.profile || {}, res.profile || {});
     toast("پروفایل ذخیره شد", "ok");
   }
+
+  function buildSettingsForm() {
+    // Load settings from localStorage
+    var notifPush = localStorage.getItem("setting_notif_push") !== "false";
+    var notifEmail = localStorage.getItem("setting_notif_email") !== "false";
+    var notifTelegram = localStorage.getItem("setting_notif_telegram") !== "false";
+    var themeMode = localStorage.getItem("setting_theme_mode") || "auto";
+
+    // Set checkbox values
+    el("notifPush").checked = notifPush;
+    el("notifEmail").checked = notifEmail;
+    el("notifTelegram").checked = notifTelegram;
+    el("themeMode").value = themeMode;
+
+    // Add event listeners
+    el("notifPush").addEventListener("change", function (e) {
+      localStorage.setItem("setting_notif_push", e.target.checked);
+      toast("تنظیم برای اعلان‌های فشاری ذخیره شد", "ok");
+    });
+
+    el("notifEmail").addEventListener("change", function (e) {
+      localStorage.setItem("setting_notif_email", e.target.checked);
+      toast("تنظیم برای اعلان‌های ایمیل ذخیره شد", "ok");
+    });
+
+    el("notifTelegram").addEventListener("change", function (e) {
+      localStorage.setItem("setting_notif_telegram", e.target.checked);
+      toast("تنظیم برای اعلان‌های تلگرام ذخیره شد", "ok");
+    });
+
+    el("themeMode").addEventListener("change", function (e) {
+      localStorage.setItem("setting_theme_mode", e.target.value);
+      toast("تم‌های نمایش تغییر یافت", "ok");
+    });
+  }
+
   function normalizeUniversityItems(modules) {
     var map = {
       courses: "course",

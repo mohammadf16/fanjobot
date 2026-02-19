@@ -140,11 +140,11 @@ function renderMiniAppPage() {
   <div class="mini-shell">
     <header class="mini-top glass">
       <div>
-        <h1>مینی‌اپ فنجوبو</h1>
-        <p id="miniUserLabel">در حال اتصال به حساب شما...</p>
+        <h1>🚀 فنجوبو</h1>
+        <p id="miniUserLabel">درحال اتصال...</p>
       </div>
       <div class="mini-actions">
-        <button id="miniRefreshAllBtn" class="btn">تازه‌سازی</button>
+        <button id="miniRefreshAllBtn" class="btn">⟳ تازه‌سازی</button>
       </div>
     </header>
 
@@ -152,50 +152,50 @@ function renderMiniAppPage() {
 
     <main>
       <section id="tab-dashboard" class="mini-tab glass active">
-        <h2>داشبورد</h2>
+        <h2>📊 داشبورد</h2>
         <div id="dashCards" class="cards-grid"></div>
         <div class="mini-grid-2">
           <article class="glass">
-            <h3>رویدادهای اخیر</h3>
+            <h3>🔔 رویدادهای اخیر</h3>
             <div id="dashEvents" class="list"></div>
           </article>
           <article class="glass">
-            <h3>خلاصه پروفایل</h3>
+            <h3>👤 پروفایل</h3>
             <div id="dashProfile" class="kv"></div>
           </article>
         </div>
       </section>
 
       <section id="tab-profile" class="mini-tab glass">
-        <h2>پروفایل</h2>
+        <h2>👨‍💼 پروفایل</h2>
         <form id="profileForm" class="form-grid"></form>
       </section>
 
       <section id="tab-university" class="mini-tab glass">
-        <h2>دانشگاه</h2>
-        <div class="toolbar">
+        <h2>🎓 دانشگاه</h2>
+        <div class="toolbar wrap">
           <select id="uniKindFilter"></select>
           <input id="uniSearchInput" placeholder="جستجو..." />
           <button id="uniLoadBtn" class="btn">بارگذاری</button>
         </div>
         <div id="uniList" class="list"></div>
         <div class="pager">
-          <button id="uniPrevBtn" class="btn ghost">قبلی</button>
+          <button id="uniPrevBtn" class="btn ghost">← قبلی</button>
           <span id="uniPageLabel">صفحه 1</span>
-          <button id="uniNextBtn" class="btn ghost">بعدی</button>
+          <button id="uniNextBtn" class="btn ghost">بعدی →</button>
         </div>
       </section>
 
       <section id="tab-industry" class="mini-tab glass">
-        <h2>صنعت</h2>
+        <h2>💼 صنعت</h2>
         <article>
-          <h3>پروفایل صنعتی</h3>
+          <h3>📋 پروفایل صنعتی</h3>
           <form id="industryProfileForm" class="form-grid"></form>
         </article>
         <div class="mini-grid-2">
           <article>
-            <h3>فرصت‌ها</h3>
-            <div class="toolbar">
+            <h3>🎯 فرصت‌ها</h3>
+            <div class="toolbar wrap">
               <select id="indTypeFilter">
                 <option value="">همه انواع</option>
                 <option value="internship">کارآموزی</option>
@@ -208,8 +208,8 @@ function renderMiniAppPage() {
             <div id="indOppList" class="list"></div>
           </article>
           <article>
-            <h3>فرصت‌های ذخیره شده</h3>
-            <div class="toolbar">
+            <h3>⭐ فرصت‌های ذخیره شده</h3>
+            <div class="toolbar wrap">
               <button id="indLoadSavedBtn" class="btn">بارگذاری ذخیره‌شده‌ها</button>
             </div>
             <div id="indSavedOppList" class="list"></div>
@@ -217,65 +217,65 @@ function renderMiniAppPage() {
         </div>
         <div class="mini-grid-2">
           <article>
-            <h3>پروژه‌های باز</h3>
-            <div class="toolbar">
+            <h3>🏗️ پروژه‌های باز</h3>
+            <div class="toolbar wrap">
               <button id="indLoadProjectsBtn" class="btn">بارگذاری پروژه‌ها</button>
             </div>
             <div id="indProjectList" class="list"></div>
           </article>
           <article>
-            <h3>فضای کاری من</h3>
-            <div class="toolbar">
+            <h3>🛠️ فضای کاری من</h3>
+            <div class="toolbar wrap">
               <button id="indLoadWorkspaceBtn" class="btn">بارگذاری فضای کاری</button>
             </div>
             <div id="indWorkspaceList" class="list"></div>
           </article>
         </div>
         <article>
-          <h3>منابع</h3>
-          <div class="toolbar">
+          <h3>📚 منابع</h3>
+          <div class="toolbar wrap">
             <select id="resCategory"></select>
             <button id="indLoadResourcesBtn" class="btn">بارگذاری منابع</button>
           </div>
           <div id="indResourceList" class="list"></div>
           <div class="pager">
-            <button id="resPrevBtn" class="btn ghost">قبلی</button>
+            <button id="resPrevBtn" class="btn ghost">← قبلی</button>
             <span id="resPageLabel">صفحه 1</span>
-            <button id="resNextBtn" class="btn ghost">بعدی</button>
+            <button id="resNextBtn" class="btn ghost">بعدی →</button>
           </div>
         </article>
         <article>
-          <h3>درخواست‌های من</h3>
+          <h3>📝 درخواست‌های من</h3>
           <div id="indApplications" class="list"></div>
         </article>
       </section>
 
       <section id="tab-path" class="mini-tab glass">
-        <h2>مسیر من</h2>
+        <h2>🗺️ مسیر من</h2>
         <div id="pathSummary" class="cards-grid"></div>
         <div class="mini-grid-2">
           <article>
-            <h3>هدف‌ها</h3>
+            <h3>🎯 هدف‌ها</h3>
             <form id="pathGoalForm" class="toolbar wrap"></form>
             <div id="pathGoals" class="list"></div>
           </article>
           <article>
-            <h3>تسک‌ها</h3>
+            <h3>✅ تسک‌ها</h3>
             <form id="pathTaskForm" class="toolbar wrap"></form>
             <div id="pathTasks" class="list"></div>
           </article>
         </div>
         <article>
-          <h3>موارد</h3>
+          <h3>🎁 موارد</h3>
           <form id="pathArtifactForm" class="toolbar wrap"></form>
           <div id="pathArtifacts" class="list"></div>
         </article>
       </section>
 
       <section id="tab-support" class="mini-tab glass">
-        <h2>پشتیبانی</h2>
+        <h2>💬 پشتیبانی</h2>
         <form id="supportCreateForm" class="form-grid"></form>
-        <div class="toolbar">
+        <div class="toolbar wrap">
           <select id="supportStatusFilter"></select>
           <button id="supportLoadBtn" class="btn">بارگذاری تیکت‌های من</button>
         </div>
@@ -283,47 +283,106 @@ function renderMiniAppPage() {
       </section>
 
       <section id="tab-submissions" class="mini-tab glass">
-        <h2>آپلودها</h2>
+        <h2>📤 آپلودها</h2>
         <form id="submissionForm" class="form-grid" enctype="multipart/form-data"></form>
-        <div class="toolbar">
+        <div class="toolbar wrap">
           <button id="submissionLoadBtn" class="btn ghost">بارگذاری آپلودهای من</button>
         </div>
         <div id="submissionList" class="list"></div>
       </section>
 
+      <section id="tab-settings" class="mini-tab glass">
+        <h2>⚙️ تنظیمات</h2>
+        <div class="mini-grid-2">
+          <article>
+            <h3>🔔 اعلان‌ها</h3>
+            <div class="form-grid">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input id="notifPush" type="checkbox" checked /> اعلان‌های شوتاک
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input id="notifEmail" type="checkbox" checked /> اعلان‌های ایمیل
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input id="notifTelegram" type="checkbox" checked /> اعلان‌های تلگرام
+              </label>
+            </div>
+          </article>
+          <article>
+            <h3>🎨 تم</h3>
+            <div class="form-grid">
+              <label>
+                <span style="display: block; margin-bottom: 6px;">حالت نمایش</span>
+                <select id="themeMode">
+                  <option value="light">روز (روشن)</option>
+                  <option value="dark">شب (تاریک)</option>
+                  <option value="auto">خودکار</option>
+                </select>
+              </label>
+            </div>
+          </article>
+        </div>
+        <article>
+          <h3>🔐 امنیت</h3>
+          <div class="form-grid">
+            <label>
+              <span style="display: block; margin-bottom: 6px;">رمز عبور</span>
+              <button class="btn ghost" onclick="alert('برای تغییر رمز روی تلگرام بات فنجوبو لمس کنید')">تغییر رمز عبور</button>
+            </label>
+          </div>
+        </article>
+        <article>
+          <h3>ℹ️ درباره</h3>
+          <div class="kv">
+            <div class="kv-row">
+              <div class="kv-key">نسخه</div>
+              <div class="kv-value">2025.02</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">آپدیت</div>
+              <div class="kv-value">فوریور ۱۴۰۴</div>
+            </div>
+            <div class="kv-row">
+              <div class="kv-key">توسعه</div>
+              <div class="kv-value">فنجوبو تیم</div>
+            </div>
+          </div>
+        </article>
+      </section>
+
       <section id="tab-admin" class="mini-tab glass">
-        <h2>ادمین</h2>
+        <h2>👑 ادمین</h2>
         <div id="adminOverviewCards" class="cards-grid"></div>
         <div class="mini-grid-2">
           <article>
-            <h3>صف پشتیبانی</h3>
-            <div class="toolbar">
+            <h3>🎫 صف پشتیبانی</h3>
+            <div class="toolbar wrap">
               <button id="adminLoadSupportBtn" class="btn">بارگذاری تیکت‌ها</button>
             </div>
             <div id="adminSupportList" class="list"></div>
           </article>
           <article>
-            <h3>صف نظارت</h3>
-            <div class="toolbar">
+            <h3>📋 صف نظارت</h3>
+            <div class="toolbar wrap">
               <button id="adminLoadSubmissionsBtn" class="btn">بارگذاری آپلودها</button>
             </div>
             <div id="adminSubmissionList" class="list"></div>
           </article>
         </div>
         <article>
-          <h3>پخش اطلاعات</h3>
+          <h3>📢 پخش اطلاعات</h3>
           <div class="toolbar wrap">
             <input id="adminBroadcastLimit" type="number" min="1" max="10000" placeholder="حد نهایی (اختیاری)" />
             <label class="pill"><input id="adminBroadcastDryRun" type="checkbox" /> اجرای آزمایشی</label>
           </div>
           <textarea id="adminBroadcastMessage" placeholder="پیام پخش را بنویسید..."></textarea>
-          <div class="toolbar">
+          <div class="toolbar wrap">
             <button id="adminBroadcastBtn" class="btn">ارسال پخش</button>
             <button id="adminLoadOverviewBtn" class="btn ghost">تازه‌سازی اطلاعات ادمین</button>
           </div>
         </article>
-        <div class="toolbar">
-          <a href="/admin/dashboard" target="_blank" class="btn ghost">باز کردن پنل کامل ادمین</a>
+        <div class="toolbar wrap">
+          <a href="/admin/dashboard" target="_blank" class="btn ghost">📊 باز کردن پنل کامل ادمین</a>
         </div>
         <p class="muted">این برگه تنها برای حسابهای ادمینی تنظیم‌شده فعال است.</p>
       </section>
