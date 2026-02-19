@@ -118,7 +118,9 @@ function buildWebhookPath() {
 }
 
 function buildWebhookUrl(pathname) {
-  const domain = (config.telegramWebhookDomain || "").replace(/\/$/, "");
+  const rawDomain = String(config.telegramWebhookDomain || "").trim();
+  const normalizedDomain = /^https?:\/\//i.test(rawDomain) ? rawDomain : `https://${rawDomain}`;
+  const domain = normalizedDomain.replace(/\/$/, "");
   return `${domain}${pathname}`;
 }
 
