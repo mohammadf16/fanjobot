@@ -1348,6 +1348,54 @@
     el("submissionLoadBtn").addEventListener("click", function () { loadMySubmissions().catch(onError); });
   }
 
+  function normalizeUsername(value) {
+    return String(value || "").trim().replace(/^@/, "");
+  }
+
+  function parseFallbackUserFromQuery() {
+    var params = new URLSearchParams(window.location.search || "");
+    var id = String(params.get("telegramId") || params.get("tgid") || params.get("uid") || "").trim();
+    if (!id) return null;
+    return {
+      id: id,
+      username: normalizeUsername(params.get("username") || params.get("user") || ""),
+      first_name: String(params.get("firstName") || "").trim(),
+      last_name: String(params.get("lastName") || "").trim()
+    };
+  }
+
+  function loadStoredFallbackUser() {
+    try {
+      var raw = window.localStorage.getItem("fanjobo_miniapp_user");
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || !parsed.id) return null;
+      return {
+        id: String(parsed.id),
+        username: normalizeUsername(parsed.username || ""),
+        first_name: String(parsed.first_name || ""),
+        last_name: String(parsed.last_name || "")
+      };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function saveStoredFallbackUser(user) {
+    try {
+      if (!user || !user.id) return;
+      window.localStorage.setItem(
+        "fanjobo_miniapp_user",
+        JSON.stringify({
+          id: String(user.id),
+          username: normalizeUsername(user.username || ""),
+          first_name: String(user.first_name || ""),
+          last_name: String(user.last_name || "")
+        })
+      );
+    } catch (_error) {}
+  }
+
   async function bootstrapSession() {
     var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
     state.tg = tg;
@@ -1360,13 +1408,41 @@
     }
 
     var tgUser = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) || null;
+    if (!tgUser || !tgUser.id) {
+      tgUser = parseFallbackUserFromQuery() || loadStoredFallbackUser();
+    }
+
+    if (!tgUser || !tgUser.id) {
+      var typedId = window.prompt(
+        "Open outside Telegram: enter telegramId to continue:",
+        ""
+      );
+      if (!typedId || !String(typedId).trim()) {
+        throw new Error("Open this mini app from Telegram, or pass telegramId in URL.");
+      }
+
+      var typedUsername = window.prompt("Telegram username (optional):", "") || "";
+      tgUser = {
+        id: String(typedId).trim(),
+        username: normalizeUsername(typedUsername),
+        first_name: "",
+        last_name: ""
+      };
+    }
+
+    tgUser = {
+      id: String(tgUser.id),
+      username: normalizeUsername((tgUser || {}).username || ""),
+      first_name: String((tgUser || {}).first_name || ""),
+      last_name: String((tgUser || {}).last_name || "")
+    };
+
+    saveStoredFallbackUser(tgUser);
     state.tgUser = tgUser;
     state.isAdmin = Boolean(
       String((tgUser || {}).id || "") === "565136808" ||
       String((tgUser || {}).username || "").toLowerCase() === "immohammadf"
     );
-
-    if (!tgUser || !tgUser.id) throw new Error("این مینی اپلیکاشن را از تلهگرام باز کنید.");
 
     var session = await api("/api/miniapp/session", {
       method: "POST",
@@ -1380,8 +1456,9 @@
 
     state.user = session.user || null;
     state.profile = session.profile || null;
+    var userTag = tgUser.username ? "@" + tgUser.username : "tg:" + tgUser.id;
     el("miniUserLabel").textContent =
-      "@" + toText(tgUser.username || "-") + " | کاربر #" + Number((state.user || {}).id || 0).toLocaleString();
+      userTag + " | \u06a9\u0627\u0631\u0628\u0631 #" + Number((state.user || {}).id || 0).toLocaleString();
   }
 
   async function boot() {
@@ -1392,10 +1469,10 @@
       buildProfileForm();
       bindStaticActions();
       setTab("dashboard");
-      toast("مینی اپلیکیشن آماده است", "ok");
+      toast("\u0645\u06cc\u0646\u06cc\u200c\u0627\u067e \u0622\u0645\u0627\u062f\u0647 \u0627\u0633\u062a", "ok");
     } catch (error) {
       onError(error);
-      el("miniUserLabel").textContent = error.message || "مینی اپلیکیشن ناموفق بود";
+      el("miniUserLabel").textContent = error.message || "\u0627\u062c\u0631\u0627\u06cc \u0645\u06cc\u0646\u06cc\u200c\u0627\u067e \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f";
     }
   }
 

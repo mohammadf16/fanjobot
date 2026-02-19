@@ -132,7 +132,7 @@ function renderMiniAppPage() {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
-  <title>اپلیکیشن کوچک فنجوبو</title>
+  <title>مینی‌اپ فنجوبو</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="/admin/assets/miniapp.css?v=${assetVersion}" />
 </head>
@@ -140,8 +140,8 @@ function renderMiniAppPage() {
   <div class="mini-shell">
     <header class="mini-top glass">
       <div>
-        <h1>اپلیکیشن کوچک فنجوبو</h1>
-        <p id="miniUserLabel">درحال اتصال به حساب شما...</p>
+        <h1>مینی‌اپ فنجوبو</h1>
+        <p id="miniUserLabel">در حال اتصال به حساب شما...</p>
       </div>
       <div class="mini-actions">
         <button id="miniRefreshAllBtn" class="btn">تازه‌سازی</button>
@@ -156,11 +156,11 @@ function renderMiniAppPage() {
         <div id="dashCards" class="cards-grid"></div>
         <div class="mini-grid-2">
           <article class="glass">
-            <h3>بوقیات اخیر</h3>
+            <h3>رویدادهای اخیر</h3>
             <div id="dashEvents" class="list"></div>
           </article>
           <article class="glass">
-            <h3>لقطه پروفایل</h3>
+            <h3>خلاصه پروفایل</h3>
             <div id="dashProfile" class="kv"></div>
           </article>
         </div>
@@ -1037,5 +1037,4 @@ router.get("/admin/logs", (_req, res) => {
 });
 
 module.exports = router;
-
 
