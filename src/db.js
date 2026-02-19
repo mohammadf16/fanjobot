@@ -68,10 +68,11 @@ function normalizeRailwayPostgresUrl(rawUrl) {
   try {
     const parsed = new URL(String(rawUrl));
     const host = parsed.hostname;
-    const isRailway = Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT);
     const isSimpleHost = /^[a-z0-9-]+$/i.test(host);
 
-    if (isRailway && isSimpleHost && host !== "localhost") {
+    // Some Railway templates expose PGHOST as a bare service name (e.g. "base").
+    // DNS lookup from app containers may require the full internal suffix.
+    if (isSimpleHost && host !== "localhost") {
       parsed.hostname = `${host}.railway.internal`;
       return parsed.toString();
     }
