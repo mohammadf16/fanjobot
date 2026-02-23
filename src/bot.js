@@ -157,6 +157,28 @@ const MAJOR_TRACKS = {
 
 const LEVEL_OPTIONS = ["کاردانی", "کارشناسی", "کارشناسی ارشد", "دکتری"];
 const TERM_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
+const MAJOR_SKILL_OPTIONS = {
+  "مهندسی صنایع": ["اکسل پیشرفته", "کنترل کیفیت", "برنامه ریزی تولید", "بهینه سازی", "تحلیل داده", "مدیریت پروژه"],
+  "مهندسی برق": ["مدار الکتریکی", "PLC", "MATLAB/Simulink", "الکترونیک قدرت", "مخابرات", "برنامه نویسی"],
+  "مهندسی مکانیک": ["SolidWorks", "AutoCAD", "CATIA", "تحلیل المان محدود", "طراحی مکانیزم", "تولید و ماشینکاری"],
+  "مهندسی شیمی": ["Aspen Plus", "HYSYS", "کنترل فرایند", "طراحی راکتور", "انتقال جرم", "ایمنی فرایند"],
+  "مهندسی مواد": ["متالوگرافی", "آزمون مواد", "خواص مکانیکی", "عملیات حرارتی", "ریخته گری", "تحلیل فازی"],
+  "مهندسی نقشه برداری": ["GIS", "GPS/GNSS", "Civil 3D", "اتوکد", "فتوگرامتری", "نقشه برداری زمینی"],
+  "مهندسی عمران": ["ETABS", "SAFE", "AutoCAD", "مقاومت مصالح", "مدیریت کارگاه", "طراحی سازه"],
+  "علوم پایه": ["Python", "MATLAB", "تحلیل آماری", "روش تحقیق", "نگارش علمی", "کار آزمایشگاهی"],
+  "مهندسی کامپیوتر": ["Python", "JavaScript", "SQL", "Git", "ساختمان داده", "یادگیری ماشین"],
+  "مهندسی دریا": ["هیدرودینامیک", "طراحی بدنه کشتی", "مدلسازی CFD", "ایمنی دریایی", "عملیات بندری", "اتوکد"],
+  "مهندسی معماری": ["Revit", "AutoCAD", "مدل سازی سه بعدی", "رندرینگ", "طراحی فضا", "اسکیس معماری"],
+  "مهندسی پزشکی": [
+    "پردازش سیگنال زیستی",
+    "MATLAB",
+    "LabVIEW",
+    "الکترونیک پزشکی",
+    "Python",
+    "طراحی تجهیزات پزشکی"
+  ]
+};
+const DEFAULT_SKILL_OPTIONS = ["تحلیل داده", "برنامه نویسی", "مدیریت پروژه", "زبان انگلیسی", "کار تیمی", "ارتباط موثر"];
 const GOAL_OPTIONS = [
   "بهبود معدل",
   "قبولی دروس مهم",
@@ -181,6 +203,7 @@ const INTEREST_OPTIONS = [
   "مالی و اقتصادی"
 ];
 const DONE_GOALS = "ثبت اهداف";
+const DONE_SKILLS = "ثبت مهارت ها";
 const DONE_INTERESTS = "ثبت علاقه ها";
 const MAJOR_PREV_PAGE = "⬅️ قبلی";
 const MAJOR_NEXT_PAGE = "بعدی ➡️";
@@ -266,7 +289,8 @@ const PROFILE_STEPS = [
   {
     key: "skills",
     section: "مهارت",
-    question: "مهارت های مرتبط و غیرمرتبط با رشته خود را بنویسید. (مثال: اکسل, کنترل پروژه, برنامه نویسی) - اختیاری",
+    question:
+      "مهارت های مرتبط با رشته شما را از دکمه ها انتخاب کنید یا دستی بنویسید (با کاما جدا کنید). سپس «ثبت مهارت ها» را بزنید. (اختیاری)",
     required: false
   },
   {
@@ -287,7 +311,7 @@ const PROFILE_STEPS = [
   {
     key: "resumeUrl",
     section: "حرفه ای",
-    question: "در صورت تمایل لینک رزومه را وارد کنید (Drive/Dropbox/...). آپلود مستقیم رزومه در نسخه بعد فعال می شود.",
+    question: "رزومه را به صورت فایل (PDF/DOC/DOCX) آپلود کنید یا لینک رزومه بفرستید. (اختیاری)",
     required: false
   },
   { key: "githubUrl", section: "حرفه ای", question: "در صورت تمایل لینک گیتهاب را وارد کنید.", required: false }
@@ -576,6 +600,26 @@ function getTracksForFamily(session) {
   return MAJOR_TRACKS[selectedFamily] || [selectedFamily].filter(Boolean);
 }
 
+function getSkillOptionsForSession(session) {
+  const selectedFamily = session?.answers?.majorFamily;
+  return MAJOR_SKILL_OPTIONS[selectedFamily] || DEFAULT_SKILL_OPTIONS;
+}
+
+function getSelectedSkillNamesFromAnswers(answers) {
+  return parseProfileSkills(answers?.skills).map((item) => item.name);
+}
+
+function toggleSkillSelection(values, option) {
+  const current = parseProfileSkills(values);
+  const exists = current.some((item) => item.name === option);
+  if (exists) {
+    return current.filter((item) => item.name !== option);
+  }
+
+  current.push({ name: option, score: 5 });
+  return current;
+}
+
 function getMajorPageInfo(session) {
   const tracks = getTracksForFamily(session);
   const totalPages = Math.max(1, Math.ceil(tracks.length / MAJOR_PAGE_SIZE));
@@ -630,6 +674,16 @@ function createStepKeyboard(step, session) {
     return Markup.keyboard([
       ["مبتدی", "متوسط"],
       ["پیشرفته", "لغو"]
+    ]).resize();
+  }
+
+  if (step.key === "skills") {
+    const selected = getSelectedSkillNamesFromAnswers(session?.answers);
+    const options = getSkillOptionsForSession(session).map((item) => (selected.includes(item) ? `✅ ${item}` : item));
+    return Markup.keyboard([
+      ...chunkOptions(options, 2),
+      [DONE_SKILLS],
+      ["رد", "لغو"]
     ]).resize();
   }
 
@@ -1568,6 +1622,102 @@ function extractSubmissionFile(ctx) {
   }
 
   return null;
+}
+
+function extractProfileResumeFile(ctx) {
+  const doc = ctx.message?.document;
+  if (!doc) return null;
+
+  const fileName = String(doc.file_name || `resume-${Date.now()}`).trim();
+  const mimeType = String(doc.mime_type || "").toLowerCase();
+  const ext = path.extname(fileName).toLowerCase();
+
+  const allowedMimeTypes = new Set([
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ]);
+  const allowedExtensions = new Set([".pdf", ".doc", ".docx"]);
+
+  const isAllowed = allowedMimeTypes.has(mimeType) || allowedExtensions.has(ext);
+  if (!isAllowed) {
+    return { invalidType: true };
+  }
+
+  return {
+    fileId: doc.file_id,
+    fileName,
+    mimeType:
+      mimeType ||
+      (ext === ".pdf"
+        ? "application/pdf"
+        : ext === ".docx"
+          ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          : "application/msword")
+  };
+}
+
+async function handleProfileWizardMediaInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = profileSessions.get(key);
+  if (!session) return false;
+
+  const step = PROFILE_STEPS[session.stepIndex];
+  if (!step || step.key !== "resumeUrl") return false;
+
+  const media = extractProfileResumeFile(ctx);
+  if (media?.invalidType) {
+    await ctx.reply("فرمت رزومه باید PDF یا DOC یا DOCX باشد. فایل را به صورت document ارسال کن.");
+    return true;
+  }
+  if (!media) {
+    await ctx.reply("در این مرحله فایل رزومه را به صورت document ارسال کن.");
+    return true;
+  }
+
+  try {
+    const fileUrl = await ctx.telegram.getFileLink(media.fileId);
+    const response = await fetch(String(fileUrl));
+    if (!response.ok) {
+      throw new Error(`Telegram resume download failed with status ${response.status}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const fileBuffer = Buffer.from(arrayBuffer);
+    const majorFolder = sanitizeDriveFolderSegment(session.answers?.majorFamily || session.answers?.major, "unknown-major");
+    const userFolder = sanitizeDriveFolderSegment(
+      session.answers?.fullName ? `${session.userId}-${session.answers.fullName}` : `user-${session.userId}`,
+      `user-${session.userId}`
+    );
+
+    const drive = await uploadBufferToDrive({
+      fileBuffer,
+      fileName: media.fileName,
+      mimeType: media.mimeType || "application/octet-stream",
+      contentType: "profile",
+      contentKind: "resume",
+      folderPathSegments: ["profiles", "resumes", majorFolder, userFolder],
+      makePublic: true
+    });
+
+    session.answers.resumeUrl = drive.webViewLink || drive.webContentLink || null;
+    session.answers.resumeFileName = media.fileName;
+    session.answers.resumeDriveFileId = drive.fileId;
+    session.stepIndex += 1;
+    profileSessions.set(key, session);
+
+    await ctx.reply("رزومه با موفقیت آپلود شد.");
+    await askCurrentStep(ctx, session);
+    return true;
+  } catch (error) {
+    console.error(error);
+    logError("Profile resume upload failed", {
+      error: error?.message || String(error),
+      userId: session.userId,
+      fileName: media.fileName
+    });
+    await ctx.reply("آپلود رزومه انجام نشد. دوباره فایل را ارسال کن یا لینک رزومه بفرست.");
+    return true;
+  }
 }
 
 async function handleSubmissionWizardMediaInput(ctx) {
@@ -4960,7 +5110,14 @@ function parseStepValue(step, text, session) {
     return { ok: true, value: parseList(raw) };
   }
 
-  if (["resumeUrl", "githubUrl"].includes(step.key)) {
+  if (step.key === "resumeUrl") {
+    if (!validateUrl(raw)) {
+      return { ok: false, message: "لینک معتبر نیست. یا لینک درست بفرست یا فایل رزومه را به صورت document آپلود کن." };
+    }
+    return { ok: true, value: raw };
+  }
+
+  if (step.key === "githubUrl") {
     if (!validateUrl(raw)) {
       return { ok: false, message: "لینک معتبر نیست. با http:// یا https:// شروع کن." };
     }
@@ -5323,6 +5480,52 @@ async function handleProfileWizardInput(ctx) {
     return true;
   }
 
+  if (step.key === "skills") {
+    if (isSkipText(text)) {
+      session.answers.skills = [];
+      session.stepIndex += 1;
+      profileSessions.set(key, session);
+      await askCurrentStep(ctx, session);
+      return true;
+    }
+
+    const picked = normalizePickedOption(text);
+
+    if (picked === DONE_SKILLS) {
+      session.stepIndex += 1;
+      profileSessions.set(key, session);
+      await askCurrentStep(ctx, session);
+      return true;
+    }
+
+    const skillOptions = getSkillOptionsForSession(session);
+    if (skillOptions.includes(picked)) {
+      session.answers.skills = toggleSkillSelection(session.answers.skills, picked);
+      profileSessions.set(key, session);
+
+      const selectedNames = getSelectedSkillNamesFromAnswers(session.answers);
+      const selectedText = selectedNames.length ? selectedNames.join("، ") : "هیچ موردی";
+
+      await ctx.reply(`مهارت ها: ${selectedText}`, createStepKeyboard(step, session));
+      return true;
+    }
+
+    const manualSkills = parseSkills(text);
+    if (manualSkills.length) {
+      session.answers.skills = manualSkills;
+      session.stepIndex += 1;
+      profileSessions.set(key, session);
+      await askCurrentStep(ctx, session);
+      return true;
+    }
+
+    await ctx.reply(
+      "از دکمه ها انتخاب کن، یا مهارت ها را با کاما بنویس، یا بزن: ثبت مهارت ها",
+      createStepKeyboard(step, session)
+    );
+    return true;
+  }
+
   if (step.key === "interests") {
     if (isSkipText(text)) {
       session.answers.interests = [];
@@ -5557,6 +5760,9 @@ function registerHandlers(bot) {
   });
 
   bot.on("document", async (ctx, next) => {
+    const handledProfileMedia = await handleProfileWizardMediaInput(ctx);
+    if (handledProfileMedia) return;
+
     const handledMedia = await handleSubmissionWizardMediaInput(ctx);
     if (handledMedia) return;
     return next();
