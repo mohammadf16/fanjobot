@@ -154,7 +154,6 @@ const UNI_MENU_COURSE_DEFINITION = "📘 تعریف دروس دانشگاه";
 const UNI_MENU_CONTENT_UPLOAD = "📤 بارگزاری محتوای دروس";
 const UNI_MENU_UPLOADED_RESOURCES = "📚 دسترسی به منابع بارگزاری شده";
 const UNI_MENU_EXAM_NOTES = "🎯 نکات و خلاصه های امتحانی";
-const UNI_MENU_PROFESSOR_CONTACTS = "👨‍🏫 راه ارتباط با اساتید";
 const UNI_PANEL_BACK = "🔙 بازگشت به دانشگاه";
 const UNI_ACCESS_KIND_BOOK = "📚 کتاب های بارگذاری شده";
 const UNI_ACCESS_KIND_NOTE = "📝 جزوه های بارگذاری شده";
@@ -167,19 +166,7 @@ const UNI_MENU = [
   [UNI_MENU_COURSE_DEFINITION],
   [UNI_MENU_CONTENT_UPLOAD],
   [UNI_MENU_UPLOADED_RESOURCES],
-  [UNI_MENU_PROFESSOR_CONTACTS],
   [UNI_MENU_BACK]
-];
-
-const INDUSTRIAL_ENGINEERING_PROFESSOR_CONTACTS = [
-  { name: "دکتر آراسته", emails: ["arasteh@nit.ac.ir", "abd_arasteh@yahoo.com"] },
-  { name: "دکتر اسدی", emails: ["e.asadi@nit.ac.ir", "e.asadi.nit@gmail.com"] },
-  { name: "دکتر امامی", emails: ["s_emami@nit.ac.ir", "ac_nit_ie@yahoo.com"] },
-  { name: "دکتر پایدار", emails: ["paydar@nit.ac.ir"] },
-  { name: "دکتر آرش نعمتی", emails: ["r.nemati@nit.ac.ir"] },
-  { name: "دکتر سینا نیری", emails: ["sinany1992@gmail.com"] },
-  { name: "دکتر تورنگ", emails: ["tourang.sk@nit.ac.ir"] },
-  { name: "دکتر حسینی", emails: ["Sm.hosseini33.ie@gmail.com"] }
 ];
 const INDUSTRY_MENU = [
   ["🧑‍💼 پروفایل صنعتی"],
@@ -1159,70 +1146,6 @@ async function showUniversityKind(ctx, kind, title, replyMenu = universityMenu()
   const items = await getUniversityItemsByKind({ major, term, kind, limit: 7 });
   const header = `${title}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}`;
   await ctx.reply(`${header}\n\n${formatList(items)}`, replyMenu);
-}
-
-function normalizeFaText(value) {
-  return String(value || "")
-    .replace(/[أإآ]/g, "ا")
-    .replace(/ي/g, "ی")
-    .replace(/ك/g, "ک")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function getProfessorContactsByMajor(major) {
-  const normalizedMajor = normalizeFaText(major);
-  if (normalizedMajor.includes("مهندسی صنایع")) {
-    return {
-      groupLabel: "مهندسی صنایع",
-      professors: INDUSTRIAL_ENGINEERING_PROFESSOR_CONTACTS
-    };
-  }
-  return null;
-}
-
-function formatProfessorContactsMessage({ major, groupLabel, professors }) {
-  const list = professors
-    .map((item) => {
-      const emails = (item.emails || []).map((email) => String(email).trim()).filter(Boolean).join("\n");
-      return `🔶 ${item.name}:\n${emails || "ایمیل ثبت نشده"}`;
-    })
-    .join("\n\n");
-
-  return (
-    `${UNI_MENU_PROFESSOR_CONTACTS}\n` +
-    `رشته: ${major}\n\n` +
-    `لیست ایمیل اساتید گروه ${groupLabel} به ترتیب حروف الفبا:\n\n` +
-    `${list}`
-  );
-}
-
-async function showUniversityProfessorContacts(ctx) {
-  const { major, term } = await loadUserAcademicProfile(ctx);
-
-  if (!major) {
-    await ctx.reply("برای دریافت اطلاعات دانشگاه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
-    return;
-  }
-
-  const contacts = getProfessorContactsByMajor(major);
-  if (!contacts) {
-    await ctx.reply(
-      `${UNI_MENU_PROFESSOR_CONTACTS}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\n` +
-        "برای این رشته هنوز لیست راه ارتباطی اساتید ثبت نشده است.",
-      universityMenu()
-    );
-    return;
-  }
-
-  await ctx.reply(
-    formatProfessorContactsMessage({
-      major,
-      groupLabel: contacts.groupLabel,
-      professors: contacts.professors
-    }),
-    universityMenu()
-  );
 }
 
 async function showUniversityUploadedResourcesPanel(ctx) {
@@ -4818,10 +4741,6 @@ const menuLabelAliases = new Map([
   [LABEL_ADMIN_PANEL, "پنل ادمین"],
   [UNI_MENU_COURSE_DEFINITION, "تعریف دروس دانشگاه"],
   [UNI_MENU_CONTENT_UPLOAD, "بارگزاری محتوای دروس"],
-  [UNI_MENU_PROFESSOR_CONTACTS, "راه ارتباط با اساتید"],
-  ["راه ارتباطی با اساتید", "راه ارتباط با اساتید"],
-  ["ارتباط با اساتید", "راه ارتباط با اساتید"],
-  ["ایمیل اساتید", "راه ارتباط با اساتید"],
   ["بارگذاری محتوای دروس", "بارگزاری محتوای دروس"],
   [UNI_MENU_UPLOADED_RESOURCES, "دسترسی به منابع بارگزاری شده"],
   ["دسترسی به منابع بارگذاری شده", "دسترسی به منابع بارگزاری شده"],
@@ -5024,10 +4943,6 @@ async function handleProfileWizardInput(ctx) {
     "مسیر من",
     "تعریف دروس دانشگاه",
     "بارگزاری محتوای دروس",
-    "راه ارتباط با اساتید",
-    "راه ارتباطی با اساتید",
-    "ارتباط با اساتید",
-    "ایمیل اساتید",
     "دسترسی به منابع بارگزاری شده",
     "نکات و خلاصه های امتحانی",
     "بازگشت به دانشگاه",
@@ -5403,10 +5318,6 @@ function registerHandlers(bot) {
 
   bot.hears("تعریف دروس دانشگاه", async (ctx) => {
     await showUniversityKind(ctx, "course", UNI_MENU_COURSE_DEFINITION);
-  });
-
-  bot.hears("راه ارتباط با اساتید", async (ctx) => {
-    await showUniversityProfessorContacts(ctx);
   });
 
   bot.hears("دروس دانشگاه", async (ctx) => {
