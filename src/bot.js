@@ -154,12 +154,32 @@ const UNI_MENU_COURSE_DEFINITION = "📘 تعریف دروس دانشگاه";
 const UNI_MENU_CONTENT_UPLOAD = "📤 بارگزاری محتوای دروس";
 const UNI_MENU_UPLOADED_RESOURCES = "📚 دسترسی به منابع بارگزاری شده";
 const UNI_MENU_EXAM_NOTES = "🎯 نکات و خلاصه های امتحانی";
+const UNI_MENU_PROFESSOR_CONTACTS = "👨‍🏫 راه ارتباط با اساتید";
+const UNI_PANEL_BACK = "🔙 بازگشت به دانشگاه";
+const UNI_ACCESS_KIND_BOOK = "📚 کتاب های بارگذاری شده";
+const UNI_ACCESS_KIND_NOTE = "📝 جزوه های بارگذاری شده";
+const UNI_ACCESS_KIND_EXAM = "🎯 نکات و خلاصه های بارگذاری شده";
+const UNI_UPLOAD_KIND_COURSE = "📘 ارسال تعریف درس";
+const UNI_UPLOAD_KIND_NOTE = "📝 ارسال جزوه";
+const UNI_UPLOAD_KIND_BOOK = "📚 ارسال کتاب";
+const UNI_UPLOAD_KIND_EXAM = "🎯 ارسال نکته امتحانی";
 const UNI_MENU = [
   [UNI_MENU_COURSE_DEFINITION],
   [UNI_MENU_CONTENT_UPLOAD],
   [UNI_MENU_UPLOADED_RESOURCES],
-  [UNI_MENU_EXAM_NOTES],
+  [UNI_MENU_PROFESSOR_CONTACTS],
   [UNI_MENU_BACK]
+];
+
+const INDUSTRIAL_ENGINEERING_PROFESSOR_CONTACTS = [
+  { name: "دکتر آراسته", emails: ["arasteh@nit.ac.ir", "abd_arasteh@yahoo.com"] },
+  { name: "دکتر اسدی", emails: ["e.asadi@nit.ac.ir", "e.asadi.nit@gmail.com"] },
+  { name: "دکتر امامی", emails: ["s_emami@nit.ac.ir", "ac_nit_ie@yahoo.com"] },
+  { name: "دکتر پایدار", emails: ["paydar@nit.ac.ir"] },
+  { name: "دکتر آرش نعمتی", emails: ["r.nemati@nit.ac.ir"] },
+  { name: "دکتر سینا نیری", emails: ["sinany1992@gmail.com"] },
+  { name: "دکتر تورنگ", emails: ["tourang.sk@nit.ac.ir"] },
+  { name: "دکتر حسینی", emails: ["Sm.hosseini33.ie@gmail.com"] }
 ];
 const INDUSTRY_MENU = [
   ["🧑‍💼 پروفایل صنعتی"],
@@ -299,6 +319,22 @@ function mainMenuForContext(ctx) {
 
 function universityMenu() {
   return Markup.keyboard(UNI_MENU).resize();
+}
+
+function universityAccessPanelMenu() {
+  return Markup.keyboard([
+    [UNI_ACCESS_KIND_BOOK, UNI_ACCESS_KIND_NOTE],
+    [UNI_ACCESS_KIND_EXAM],
+    [UNI_PANEL_BACK]
+  ]).resize();
+}
+
+function universityUploadPanelMenu() {
+  return Markup.keyboard([
+    [UNI_UPLOAD_KIND_COURSE, UNI_UPLOAD_KIND_NOTE],
+    [UNI_UPLOAD_KIND_BOOK, UNI_UPLOAD_KIND_EXAM],
+    [UNI_PANEL_BACK]
+  ]).resize();
 }
 
 function industryMenu() {
@@ -1112,7 +1148,7 @@ async function showUniversityBookDetailPanel(ctx, contentId, page = 0) {
   await sendOrEditInlinePanel(ctx, buildBookDetailMessage(item), keyboard);
 }
 
-async function showUniversityKind(ctx, kind, title) {
+async function showUniversityKind(ctx, kind, title, replyMenu = universityMenu()) {
   const { major, term } = await loadUserAcademicProfile(ctx);
 
   if (!major) {
@@ -1122,7 +1158,71 @@ async function showUniversityKind(ctx, kind, title) {
 
   const items = await getUniversityItemsByKind({ major, term, kind, limit: 7 });
   const header = `${title}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}`;
-  await ctx.reply(`${header}\n\n${formatList(items)}`, universityMenu());
+  await ctx.reply(`${header}\n\n${formatList(items)}`, replyMenu);
+}
+
+function normalizeFaText(value) {
+  return String(value || "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ي/g, "ی")
+    .replace(/ك/g, "ک")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getProfessorContactsByMajor(major) {
+  const normalizedMajor = normalizeFaText(major);
+  if (normalizedMajor.includes("مهندسی صنایع")) {
+    return {
+      groupLabel: "مهندسی صنایع",
+      professors: INDUSTRIAL_ENGINEERING_PROFESSOR_CONTACTS
+    };
+  }
+  return null;
+}
+
+function formatProfessorContactsMessage({ major, groupLabel, professors }) {
+  const list = professors
+    .map((item) => {
+      const emails = (item.emails || []).map((email) => String(email).trim()).filter(Boolean).join("\n");
+      return `🔶 ${item.name}:\n${emails || "ایمیل ثبت نشده"}`;
+    })
+    .join("\n\n");
+
+  return (
+    `${UNI_MENU_PROFESSOR_CONTACTS}\n` +
+    `رشته: ${major}\n\n` +
+    `لیست ایمیل اساتید گروه ${groupLabel} به ترتیب حروف الفبا:\n\n` +
+    `${list}`
+  );
+}
+
+async function showUniversityProfessorContacts(ctx) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("برای دریافت اطلاعات دانشگاه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const contacts = getProfessorContactsByMajor(major);
+  if (!contacts) {
+    await ctx.reply(
+      `${UNI_MENU_PROFESSOR_CONTACTS}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\n` +
+        "برای این رشته هنوز لیست راه ارتباطی اساتید ثبت نشده است.",
+      universityMenu()
+    );
+    return;
+  }
+
+  await ctx.reply(
+    formatProfessorContactsMessage({
+      major,
+      groupLabel: contacts.groupLabel,
+      professors: contacts.professors
+    }),
+    universityMenu()
+  );
 }
 
 async function showUniversityUploadedResourcesPanel(ctx) {
@@ -1133,22 +1233,33 @@ async function showUniversityUploadedResourcesPanel(ctx) {
     return;
   }
 
+  await ctx.reply(
+    `${UNI_MENU_UPLOADED_RESOURCES}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\n` +
+      "کدوم بخش میخوای بری؟\n- کتاب های بارگذاری شده\n- جزوه های بارگذاری شده\n- نکات و خلاصه های بارگذاری شده",
+    universityAccessPanelMenu()
+  );
+}
+
+async function showUniversityUploadedNotesPanel(ctx) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("برای دریافت محتوای دقیق دانشگاه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
   const items = await getUniversityItemsByKinds({
     major,
     term,
-    kinds: ["note", "book", "resource"],
-    limit: 24
+    kinds: ["note"],
+    limit: 20
   });
 
-  const header = `${UNI_MENU_UPLOADED_RESOURCES}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}`;
-  await ctx.reply(`${header}\n\n${formatUniversityListWithKinds(items)}`, universityMenu());
-
-  if (items.some((item) => item.kind === "book")) {
-    await showUniversityBooksPage(ctx, 0);
-  }
+  const header = `${UNI_ACCESS_KIND_NOTE}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}`;
+  await ctx.reply(`${header}\n\n${formatUniversityListWithKinds(items)}`, universityAccessPanelMenu());
 }
 
-async function showUniversityExamNotesPanel(ctx) {
+async function showUniversityExamNotesPanel(ctx, replyMenu = universityMenu()) {
   const { major, term } = await loadUserAcademicProfile(ctx);
 
   if (!major) {
@@ -1164,7 +1275,22 @@ async function showUniversityExamNotesPanel(ctx) {
   });
 
   const header = `${UNI_MENU_EXAM_NOTES}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}`;
-  await ctx.reply(`${header}\n\n${formatUniversityListWithKinds(items)}`, universityMenu());
+  await ctx.reply(`${header}\n\n${formatUniversityListWithKinds(items)}`, replyMenu);
+}
+
+async function showUniversityUploadKindsPanel(ctx) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("قبل از ارسال محتوا، ابتدا پروفایل را کامل کن.", mainMenuForContext(ctx));
+    return;
+  }
+
+  await ctx.reply(
+    `${UNI_MENU_CONTENT_UPLOAD}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\n` +
+      "نوع محتوای ارسالی را انتخاب کن.",
+    universityUploadPanelMenu()
+  );
 }
 
 function getSubmissionKindByLabel(label) {
@@ -1221,6 +1347,12 @@ function getSubmissionKindByKeyword(label) {
   return null;
 }
 
+function getSubmissionKindByKey(key) {
+  const raw = String(key || "").trim();
+  if (!raw) return null;
+  return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === raw) || null;
+}
+
 function submissionKindKeyboard() {
   const options = UNIVERSITY_SUBMISSION_KINDS.map((item) => item.label);
   return Markup.keyboard([
@@ -1269,9 +1401,10 @@ async function askSubmissionStep(ctx, session) {
   await ctx.reply(step.question, Markup.keyboard([[UNIVERSITY_SUBMISSION_BACK]]).resize());
 }
 
-async function startUniversitySubmissionWizard(ctx) {
+async function startUniversitySubmissionWizard(ctx, presetKindKey = null) {
   const userId = await ensureUser(ctx);
   const key = getSessionKey(ctx);
+  const presetKind = getSubmissionKindByKey(presetKindKey);
   const profileRes = await query(
     `SELECT u.full_name, p.university, p.major, p.term
      FROM users u
@@ -1286,10 +1419,18 @@ async function startUniversitySubmissionWizard(ctx) {
     return;
   }
 
+  const answers = {};
+  let stepIndex = 0;
+  if (presetKind) {
+    answers.contentKind = presetKind.key;
+    answers.contentKindLabel = presetKind.label;
+    stepIndex = 1;
+  }
+
   submissionSessions.set(key, {
     userId,
-    stepIndex: 0,
-    answers: {},
+    stepIndex,
+    answers,
     context: {
       fullName: profile.full_name || null,
       major: profile.major || null,
@@ -1298,9 +1439,15 @@ async function startUniversitySubmissionWizard(ctx) {
   });
 
   await ctx.reply(
-    "فرم ارسال محتوای دانشگاه شروع شد. اطلاعات کامل بفرست تا برای ادمین در صف بررسی ثبت شود."
+    presetKind
+      ? `فرم ارسال محتوای دانشگاه شروع شد.\nنوع انتخابی: ${presetKind.label}\nاطلاعات کامل بفرست تا برای ادمین در صف بررسی ثبت شود.`
+      : "فرم ارسال محتوای دانشگاه شروع شد. اطلاعات کامل بفرست تا برای ادمین در صف بررسی ثبت شود."
   );
-  logInfo("University submission wizard started", { userId, telegramId: String(ctx.from?.id || "") });
+  logInfo("University submission wizard started", {
+    userId,
+    telegramId: String(ctx.from?.id || ""),
+    presetKind: presetKind?.key || null
+  });
   await askSubmissionStep(ctx, submissionSessions.get(key));
 }
 
@@ -4671,15 +4818,30 @@ const menuLabelAliases = new Map([
   [LABEL_ADMIN_PANEL, "پنل ادمین"],
   [UNI_MENU_COURSE_DEFINITION, "تعریف دروس دانشگاه"],
   [UNI_MENU_CONTENT_UPLOAD, "بارگزاری محتوای دروس"],
+  [UNI_MENU_PROFESSOR_CONTACTS, "راه ارتباط با اساتید"],
+  ["راه ارتباطی با اساتید", "راه ارتباط با اساتید"],
+  ["ارتباط با اساتید", "راه ارتباط با اساتید"],
+  ["ایمیل اساتید", "راه ارتباط با اساتید"],
+  ["بارگذاری محتوای دروس", "بارگزاری محتوای دروس"],
   [UNI_MENU_UPLOADED_RESOURCES, "دسترسی به منابع بارگزاری شده"],
-  [UNI_MENU_EXAM_NOTES, "نکات و خلاصه های امتحانی"],
-  ["نکات و خلاصه‌های امتحانی", "نکات و خلاصه های امتحانی"],
+  ["دسترسی به منابع بارگذاری شده", "دسترسی به منابع بارگزاری شده"],
+  [UNI_MENU_EXAM_NOTES, "دسترسی به منابع بارگزاری شده"],
+  [UNI_PANEL_BACK, "بازگشت به دانشگاه"],
+  [UNI_ACCESS_KIND_BOOK, "کتاب های بارگذاری شده"],
+  [UNI_ACCESS_KIND_NOTE, "جزوه های بارگذاری شده"],
+  [UNI_ACCESS_KIND_EXAM, "نکات و خلاصه های بارگذاری شده"],
+  [UNI_UPLOAD_KIND_COURSE, "ارسال تعریف درس"],
+  [UNI_UPLOAD_KIND_NOTE, "ارسال جزوه"],
+  [UNI_UPLOAD_KIND_BOOK, "ارسال کتاب"],
+  [UNI_UPLOAD_KIND_EXAM, "ارسال نکته امتحانی"],
+  ["نکات و خلاصه‌های امتحانی", "دسترسی به منابع بارگزاری شده"],
+  ["نکات و خلاصه‌های بارگذاری شده", "نکات و خلاصه های بارگذاری شده"],
   ["📘 دروس دانشگاه", "دروس دانشگاه"],
   ["📝 جزوه های دانشگاه", "جزوه های دانشگاه"],
   ["📚 کتاب های دانشگاه", "کتاب های دانشگاه"],
   ["🔎 منابع دانشگاه", "منابع دانشگاه"],
   ["🎯 نکات امتحان دانشگاه", "نکات امتحان دانشگاه"],
-  ["📤 ارسال محتوای دانشگاه", "ارسال محتوای دانشگاه"],
+  ["📤 ارسال محتوای دانشگاه", "بارگزاری محتوای دروس"],
   ["🧑‍💼 پروفایل صنعتی", "پروفایل صنعتی"],
   ["📌 تابلو فرصت ها", "تابلو فرصت ها"],
   ["🧪 مرکز پروژه ها", "مرکز پروژه ها"],
@@ -4862,8 +5024,20 @@ async function handleProfileWizardInput(ctx) {
     "مسیر من",
     "تعریف دروس دانشگاه",
     "بارگزاری محتوای دروس",
+    "راه ارتباط با اساتید",
+    "راه ارتباطی با اساتید",
+    "ارتباط با اساتید",
+    "ایمیل اساتید",
     "دسترسی به منابع بارگزاری شده",
     "نکات و خلاصه های امتحانی",
+    "بازگشت به دانشگاه",
+    "کتاب های بارگذاری شده",
+    "جزوه های بارگذاری شده",
+    "نکات و خلاصه های بارگذاری شده",
+    "ارسال تعریف درس",
+    "ارسال جزوه",
+    "ارسال کتاب",
+    "ارسال نکته امتحانی",
     "دروس دانشگاه",
     "جزوه های دانشگاه",
     "کتاب های دانشگاه",
@@ -5231,6 +5405,10 @@ function registerHandlers(bot) {
     await showUniversityKind(ctx, "course", UNI_MENU_COURSE_DEFINITION);
   });
 
+  bot.hears("راه ارتباط با اساتید", async (ctx) => {
+    await showUniversityProfessorContacts(ctx);
+  });
+
   bot.hears("دروس دانشگاه", async (ctx) => {
     await showUniversityKind(ctx, "course", UNI_MENU_COURSE_DEFINITION);
   });
@@ -5239,12 +5417,24 @@ function registerHandlers(bot) {
     await showUniversityUploadedResourcesPanel(ctx);
   });
 
+  bot.hears("کتاب های بارگذاری شده", async (ctx) => {
+    await showUniversityBooksPanel(ctx);
+  });
+
+  bot.hears("جزوه های بارگذاری شده", async (ctx) => {
+    await showUniversityUploadedNotesPanel(ctx);
+  });
+
+  bot.hears("نکات و خلاصه های بارگذاری شده", async (ctx) => {
+    await showUniversityExamNotesPanel(ctx, universityAccessPanelMenu());
+  });
+
   bot.hears("جزوه های دانشگاه", async (ctx) => {
-    await showUniversityUploadedResourcesPanel(ctx);
+    await showUniversityUploadedNotesPanel(ctx);
   });
 
   bot.hears("کتاب های دانشگاه", async (ctx) => {
-    await showUniversityUploadedResourcesPanel(ctx);
+    await showUniversityBooksPanel(ctx);
   });
 
   bot.hears("منابع دانشگاه", async (ctx) => {
@@ -5252,19 +5442,39 @@ function registerHandlers(bot) {
   });
 
   bot.hears("نکات و خلاصه های امتحانی", async (ctx) => {
-    await showUniversityExamNotesPanel(ctx);
+    await showUniversityUploadedResourcesPanel(ctx);
   });
 
   bot.hears("نکات امتحان دانشگاه", async (ctx) => {
-    await showUniversityExamNotesPanel(ctx);
+    await showUniversityUploadedResourcesPanel(ctx);
   });
 
   bot.hears("بارگزاری محتوای دروس", async (ctx) => {
-    await startUniversitySubmissionWizard(ctx);
+    await showUniversityUploadKindsPanel(ctx);
+  });
+
+  bot.hears("ارسال تعریف درس", async (ctx) => {
+    await startUniversitySubmissionWizard(ctx, "course");
+  });
+
+  bot.hears("ارسال جزوه", async (ctx) => {
+    await startUniversitySubmissionWizard(ctx, "note");
+  });
+
+  bot.hears("ارسال کتاب", async (ctx) => {
+    await startUniversitySubmissionWizard(ctx, "book");
+  });
+
+  bot.hears("ارسال نکته امتحانی", async (ctx) => {
+    await startUniversitySubmissionWizard(ctx, "exam-tip");
   });
 
   bot.hears("ارسال محتوای دانشگاه", async (ctx) => {
-    await startUniversitySubmissionWizard(ctx);
+    await showUniversityUploadKindsPanel(ctx);
+  });
+
+  bot.hears(UNI_PANEL_BACK, async (ctx) => {
+    await ctx.reply("به منوی دانشگاه برگشتی.", universityMenu());
   });
 
   bot.hears(UNI_MENU_BACK, async (ctx) => {
