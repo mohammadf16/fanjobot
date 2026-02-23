@@ -150,18 +150,21 @@ const MAJOR_PREV_PAGE = "⬅️ قبلی";
 const MAJOR_NEXT_PAGE = "بعدی ➡️";
 const MAJOR_PAGE_SIZE = 4;
 const UNI_MENU_BACK = "🔙 بازگشت به منوی اصلی";
+const UNI_MENU_COURSE_DEFINITION = "📘 تعریف دروس دانشگاه";
+const UNI_MENU_CONTENT_UPLOAD = "📤 بارگزاری محتوای دروس";
+const UNI_MENU_UPLOADED_RESOURCES = "📚 دسترسی به منابع بارگزاری شده";
+const UNI_MENU_EXAM_NOTES = "🎯 نکات و خلاصه های امتحانی";
 const UNI_MENU = [
-  ["📘 دروس دانشگاه"],
-  ["📝 جزوه های دانشگاه", "📚 کتاب های دانشگاه"],
-  ["🔎 منابع دانشگاه", "🎯 نکات امتحان دانشگاه"],
-  ["📤 ارسال محتوای دانشگاه"],
+  [UNI_MENU_COURSE_DEFINITION],
+  [UNI_MENU_CONTENT_UPLOAD],
+  [UNI_MENU_UPLOADED_RESOURCES],
+  [UNI_MENU_EXAM_NOTES],
   [UNI_MENU_BACK]
 ];
 const INDUSTRY_MENU = [
-  ["🧑‍💼 پروفایل صنعتی", "🎯 پیشنهاد فرصت ها"],
-  ["📌 برد فرصت ها", "📍 پیگیری درخواست ها"],
-  ["🧪 هاب پروژه ها", "🛠️ اجرای پروژه"],
-  ["🗺️ مسیر شغلی", "🎓 منابع صنعتی"],
+  ["🧑‍💼 پروفایل صنعتی"],
+  ["📌 تابلو فرصت ها", "🧪 مرکز پروژه ها"],
+  ["📍 پیگیری درخواست ها"],
   [UNI_MENU_BACK]
 ];
 const MY_PATH_MENU_BACK = "🔙 خروج از مسیر من";
@@ -231,10 +234,9 @@ const PROFILE_STEPS = [
 const UNIVERSITY_SUBMISSION_BACK = "❌ لغو ارسال محتوا";
 const UNIVERSITY_SUBMISSION_DONE = "✅ ثبت نهایی ارسال";
 const UNIVERSITY_SUBMISSION_KINDS = [
-  { key: "course", label: "📘 دروس دانشگاه" },
+  { key: "course", label: UNI_MENU_COURSE_DEFINITION },
   { key: "note", label: "📝 جزوه های دانشگاه" },
   { key: "book", label: "📚 کتاب های دانشگاه" },
-  { key: "resource", label: "🔎 منابع دانشگاه" },
   { key: "exam-tip", label: "🎯 نکات امتحان دانشگاه" }
 ];
 
@@ -345,6 +347,7 @@ function industryOpportunityPanelMenu() {
 function industryProjectPanelMenu() {
   return Markup.keyboard([
     [INDUSTRY_PROJECT_DETAIL, INDUSTRY_PROJECT_START],
+    [INDUSTRY_WORK_PROGRESS, INDUSTRY_WORK_LINK],
     [INDUSTRY_PROJECT_PREV, INDUSTRY_PROJECT_NEXT],
     [INDUSTRY_PROJECT_REFRESH],
     [INDUSTRY_PANEL_BACK]
@@ -620,6 +623,38 @@ async function getUniversityItemsByKind({ major, term, kind, limit = 5 }) {
   return res.rows;
 }
 
+const UNIVERSITY_KIND_TITLES = {
+  course: "تعریف درس",
+  note: "جزوه",
+  book: "کتاب",
+  resource: "منبع",
+  "exam-tip": "نکته امتحانی",
+  summary: "خلاصه امتحانی"
+};
+
+async function getUniversityItemsByKinds({ major, term, kinds = [], limit = 20 }) {
+  const safeKinds = Array.isArray(kinds)
+    ? kinds.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+
+  if (!safeKinds.length) return [];
+
+  const res = await query(
+    `SELECT c.id, c.title, c.kind
+     FROM contents c
+     WHERE c.type = 'university'
+       AND c.kind = ANY($1::text[])
+       AND c.is_published = TRUE
+       AND ($2::text IS NULL OR major = $2 OR major IS NULL)
+       AND ($3::text IS NULL OR term = $3 OR term IS NULL)
+     ORDER BY created_at DESC
+     LIMIT $4`,
+    [safeKinds, major || null, term || null, limit]
+  );
+
+  return res.rows;
+}
+
 function extractDriveFileIdFromTags(tags) {
   if (!Array.isArray(tags)) return null;
   const entry = tags.find((item) => String(item || "").startsWith("_drive_file_id:"));
@@ -659,6 +694,13 @@ function resolveItemDriveFileId(item) {
 function formatList(items) {
   if (!items.length) return "موردی ثبت نشده.";
   return items.map((item, index) => `${index + 1}. ${item.title}`).join("\n");
+}
+
+function formatUniversityListWithKinds(items) {
+  if (!items.length) return "موردی ثبت نشده.";
+  return items
+    .map((item, index) => `${index + 1}. [${UNIVERSITY_KIND_TITLES[item.kind] || item.kind}] ${item.title}`)
+    .join("\n");
 }
 
 function clampInt(value, min, max) {
@@ -1083,6 +1125,48 @@ async function showUniversityKind(ctx, kind, title) {
   await ctx.reply(`${header}\n\n${formatList(items)}`, universityMenu());
 }
 
+async function showUniversityUploadedResourcesPanel(ctx) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("برای دریافت محتوای دقیق دانشگاه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const items = await getUniversityItemsByKinds({
+    major,
+    term,
+    kinds: ["note", "book", "resource"],
+    limit: 24
+  });
+
+  const header = `${UNI_MENU_UPLOADED_RESOURCES}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}`;
+  await ctx.reply(`${header}\n\n${formatUniversityListWithKinds(items)}`, universityMenu());
+
+  if (items.some((item) => item.kind === "book")) {
+    await showUniversityBooksPage(ctx, 0);
+  }
+}
+
+async function showUniversityExamNotesPanel(ctx) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("برای دریافت محتوای دقیق دانشگاه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const items = await getUniversityItemsByKinds({
+    major,
+    term,
+    kinds: ["exam-tip", "summary"],
+    limit: 20
+  });
+
+  const header = `${UNI_MENU_EXAM_NOTES}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}`;
+  await ctx.reply(`${header}\n\n${formatUniversityListWithKinds(items)}`, universityMenu());
+}
+
 function getSubmissionKindByLabel(label) {
   const raw = normalizePickedOption(String(label || "").trim());
   if (!raw) return null;
@@ -1130,7 +1214,6 @@ function getSubmissionKindByKeyword(label) {
   if (normalized.includes("درس")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "course") || null;
   if (normalized.includes("جزوه")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "note") || null;
   if (normalized.includes("کتاب")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "book") || null;
-  if (normalized.includes("منبع")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "resource") || null;
   if (normalized.includes("نکات") || normalized.includes("امتحان")) {
     return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "exam-tip") || null;
   }
@@ -1859,7 +1942,7 @@ async function handleIndustryPanelInput(ctx) {
       return true;
     }
     await updateStudentProjectProgress(ctx, Number(match[1]), Number(match[2]));
-    await showIndustryWorkspacePanel(ctx);
+    await showIndustryProjectsPanel(ctx, Number(session.page || 0));
     return true;
   }
 
@@ -1870,7 +1953,7 @@ async function handleIndustryPanelInput(ctx) {
       return true;
     }
     await addStudentProjectLink(ctx, Number(match[1]), String(match[2] || "").trim());
-    await showIndustryWorkspacePanel(ctx);
+    await showIndustryProjectsPanel(ctx, Number(session.page || 0));
     return true;
   }
 
@@ -2766,7 +2849,7 @@ async function showIndustryOpportunitiesPanel(ctx, panelType = "board", requeste
   const start = safePage * INDUSTRY_PANEL_PAGE_SIZE;
   const pageItems = source.slice(start, start + INDUSTRY_PANEL_PAGE_SIZE);
 
-  const title = panelType === "recommender" ? "ماژول 2 - پیشنهاد فرصت ها" : "ماژول 3 - برد فرصت ها";
+  const title = panelType === "recommender" ? "ماژول 2 - پیشنهاد فرصت ها" : "ماژول 3 - تابلو فرصت ها";
   const lines = pageItems.map((item, index) => {
     const rank = start + index + 1;
     const scoreText = profile ? ` | امتیاز ${item.matchScore}` : "";
@@ -2793,13 +2876,8 @@ async function showIndustryOpportunitiesPanel(ctx, panelType = "board", requeste
 }
 
 async function showIndustryProjectsPanel(ctx, requestedPage = 0) {
-  const { profile, context } = await loadIndustryContext(ctx);
+  const { userId, profile, context } = await loadIndustryContext(ctx);
   const projects = await listOpenProjects(140);
-  if (!projects.length) {
-    await ctx.reply("فعلا پروژه باز برای نمایش نداریم.", industryMenu());
-    clearIndustrySession(ctx);
-    return;
-  }
 
   const ranked = profile
     ? projects
@@ -2811,21 +2889,44 @@ async function showIndustryProjectsPanel(ctx, requestedPage = 0) {
   const start = safePage * INDUSTRY_PANEL_PAGE_SIZE;
   const pageItems = ranked.slice(start, start + INDUSTRY_PANEL_PAGE_SIZE);
 
-  const lines = pageItems.map((item, index) => {
-    const rank = start + index + 1;
-    const scoreText = profile ? ` | امتیاز ${item.matchScore}` : "";
-    return (
-      `${rank}. #${item.id} ${item.title}` +
-      ` | ${formatProjectType(item.type)}` +
-      ` | ${item.level}` +
-      ` | ${item.estimated_hours || "?"}h` +
-      `${scoreText}`
-    );
-  }).join("\n");
+  const lines = pageItems.length
+    ? pageItems.map((item, index) => {
+        const rank = start + index + 1;
+        const scoreText = profile ? ` | امتیاز ${item.matchScore}` : "";
+        return (
+          `${rank}. #${item.id} ${item.title}` +
+          ` | ${formatProjectType(item.type)}` +
+          ` | ${item.level}` +
+          ` | ${item.estimated_hours || "?"}h` +
+          `${scoreText}`
+        );
+      }).join("\n")
+    : "فعلا پروژه جدیدی برای شروع ثبت نشده.";
+
+  const workspaceRes = await query(
+    `SELECT sp.id, sp.project_id, sp.status, sp.progress, sp.output_links, p.title
+     FROM industry_student_projects sp
+     JOIN industry_projects p ON p.id = sp.project_id
+     WHERE sp.user_id = $1
+     ORDER BY sp.updated_at DESC
+     LIMIT 6`,
+    [userId]
+  );
+
+  const workspaceText = workspaceRes.rows.length
+    ? workspaceRes.rows
+        .map(
+          (item) =>
+            `#${item.id} | پروژه #${item.project_id} ${item.title} | ${item.progress}% | ${formatStudentProjectStatus(item.status)} | لینک: ${asArray(item.output_links).length}`
+        )
+        .join("\n")
+    : "فعلا پروژه فعالی نداری.";
 
   await ctx.reply(
-    `ماژول 5 - هاب پروژه ها\nنتیجه: ${ranked.length} مورد | صفحه ${safePage + 1} از ${totalPages}\n\n${lines}\n\n` +
-      "برای جزئیات یا شروع پروژه از دکمه های زیر استفاده کن.",
+    `ماژول 5 - مرکز پروژه ها\nنتیجه: ${ranked.length} مورد | صفحه ${safePage + 1} از ${totalPages}\n\n` +
+      `پروژه های قابل شروع:\n${lines}\n\n` +
+      `پروژه های فعال من:\n${workspaceText}\n\n` +
+      "برای جزئیات، شروع، ثبت پیشرفت یا ثبت لینک خروجی از دکمه های زیر استفاده کن.",
     industryProjectPanelMenu()
   );
 
@@ -2878,33 +2979,8 @@ async function showIndustryTrackerPanel(ctx) {
 }
 
 async function showIndustryWorkspacePanel(ctx) {
-  const { userId } = await loadIndustryContext(ctx);
-  const rows = await query(
-    `SELECT sp.id, sp.project_id, sp.status, sp.progress, sp.output_links, p.title
-     FROM industry_student_projects sp
-     JOIN industry_projects p ON p.id = sp.project_id
-     WHERE sp.user_id = $1
-     ORDER BY sp.updated_at DESC
-     LIMIT 12`,
-    [userId]
-  );
-
-  const text = rows.rows.length
-    ? rows.rows
-        .map(
-          (item) =>
-            `#${item.id} | پروژه #${item.project_id} ${item.title} | ${item.progress}% | ${formatStudentProjectStatus(item.status)} | لینک: ${asArray(item.output_links).length}`
-        )
-        .join("\n")
-    : "فعلا پروژه فعالی نداری.";
-
-  await ctx.reply(
-    `ماژول 6 - اجرای پروژه\n\n${text}\n\n` +
-      "برای ثبت پیشرفت یا لینک خروجی، از دکمه های پنل استفاده کن.",
-    industryWorkspacePanelMenu()
-  );
-
-  setIndustrySession(ctx, { mode: "workspace" });
+  const session = getIndustrySession(ctx);
+  await showIndustryProjectsPanel(ctx, Number(session?.page || 0));
 }
 
 async function showIndustryResourcesPanel(ctx, requestedPage = 0) {
@@ -4593,23 +4669,29 @@ const menuLabelAliases = new Map([
   [LABEL_INDUSTRY, "صنعت"],
   [LABEL_MY_PATH, "مسیر من"],
   [LABEL_ADMIN_PANEL, "پنل ادمین"],
+  [UNI_MENU_COURSE_DEFINITION, "تعریف دروس دانشگاه"],
+  [UNI_MENU_CONTENT_UPLOAD, "بارگزاری محتوای دروس"],
+  [UNI_MENU_UPLOADED_RESOURCES, "دسترسی به منابع بارگزاری شده"],
+  [UNI_MENU_EXAM_NOTES, "نکات و خلاصه های امتحانی"],
+  ["نکات و خلاصه‌های امتحانی", "نکات و خلاصه های امتحانی"],
   ["📘 دروس دانشگاه", "دروس دانشگاه"],
-  ["دروس دانشگاه", "📘 دروس دانشگاه"],
   ["📝 جزوه های دانشگاه", "جزوه های دانشگاه"],
-  ["جزوه های دانشگاه", "📝 جزوه های دانشگاه"],
   ["📚 کتاب های دانشگاه", "کتاب های دانشگاه"],
-  ["کتاب های دانشگاه", "📚 کتاب های دانشگاه"],
   ["🔎 منابع دانشگاه", "منابع دانشگاه"],
-  ["منابع دانشگاه", "🔎 منابع دانشگاه"],
   ["🎯 نکات امتحان دانشگاه", "نکات امتحان دانشگاه"],
-  ["نکات امتحان دانشگاه", "🎯 نکات امتحان دانشگاه"],
   ["📤 ارسال محتوای دانشگاه", "ارسال محتوای دانشگاه"],
   ["🧑‍💼 پروفایل صنعتی", "پروفایل صنعتی"],
-  ["🎯 پیشنهاد فرصت ها", "پیشنهاد فرصت ها"],
-  ["📌 برد فرصت ها", "برد فرصت ها"],
+  ["📌 تابلو فرصت ها", "تابلو فرصت ها"],
+  ["🧪 مرکز پروژه ها", "مرکز پروژه ها"],
+  ["🎯 پیشنهاد فرصت ها", "تابلو فرصت ها"],
+  ["📌 برد فرصت ها", "تابلو فرصت ها"],
   ["📍 پیگیری درخواست ها", "پیگیری درخواست ها"],
-  ["🧪 هاب پروژه ها", "هاب پروژه ها"],
-  ["🛠️ اجرای پروژه", "اجرای پروژه"],
+  ["🧪 هاب پروژه ها", "مرکز پروژه ها"],
+  ["🛠️ اجرای پروژه", "مرکز پروژه ها"],
+  ["پیشنهاد فرصت ها", "تابلو فرصت ها"],
+  ["برد فرصت ها", "تابلو فرصت ها"],
+  ["هاب پروژه ها", "مرکز پروژه ها"],
+  ["اجرای پروژه", "مرکز پروژه ها"],
   ["🗺️ مسیر شغلی", "مسیر شغلی"],
   ["🎓 منابع صنعتی", "منابع صنعتی"],
   [INDUSTRY_PANEL_BACK, "بازگشت به پنل صنعت"],
@@ -4778,6 +4860,10 @@ async function handleProfileWizardInput(ctx) {
     "دانشگاه",
     "صنعت",
     "مسیر من",
+    "تعریف دروس دانشگاه",
+    "بارگزاری محتوای دروس",
+    "دسترسی به منابع بارگزاری شده",
+    "نکات و خلاصه های امتحانی",
     "دروس دانشگاه",
     "جزوه های دانشگاه",
     "کتاب های دانشگاه",
@@ -4785,6 +4871,8 @@ async function handleProfileWizardInput(ctx) {
     "نکات امتحان دانشگاه",
     "ارسال محتوای دانشگاه",
     "پروفایل صنعتی",
+    "تابلو فرصت ها",
+    "مرکز پروژه ها",
     "پیشنهاد فرصت ها",
     "برد فرصت ها",
     "پیگیری درخواست ها",
@@ -5139,24 +5227,40 @@ function registerHandlers(bot) {
     );
   });
 
+  bot.hears("تعریف دروس دانشگاه", async (ctx) => {
+    await showUniversityKind(ctx, "course", UNI_MENU_COURSE_DEFINITION);
+  });
+
   bot.hears("دروس دانشگاه", async (ctx) => {
-    await showUniversityKind(ctx, "course", "دروس دانشگاه");
+    await showUniversityKind(ctx, "course", UNI_MENU_COURSE_DEFINITION);
+  });
+
+  bot.hears("دسترسی به منابع بارگزاری شده", async (ctx) => {
+    await showUniversityUploadedResourcesPanel(ctx);
   });
 
   bot.hears("جزوه های دانشگاه", async (ctx) => {
-    await showUniversityKind(ctx, "note", "جزوه های دانشگاه");
+    await showUniversityUploadedResourcesPanel(ctx);
   });
 
   bot.hears("کتاب های دانشگاه", async (ctx) => {
-    await showUniversityBooksPanel(ctx);
+    await showUniversityUploadedResourcesPanel(ctx);
   });
 
   bot.hears("منابع دانشگاه", async (ctx) => {
-    await showUniversityKind(ctx, "resource", "منابع دانشگاه");
+    await showUniversityUploadedResourcesPanel(ctx);
+  });
+
+  bot.hears("نکات و خلاصه های امتحانی", async (ctx) => {
+    await showUniversityExamNotesPanel(ctx);
   });
 
   bot.hears("نکات امتحان دانشگاه", async (ctx) => {
-    await showUniversityKind(ctx, "exam-tip", "نکات امتحان دانشگاه");
+    await showUniversityExamNotesPanel(ctx);
+  });
+
+  bot.hears("بارگزاری محتوای دروس", async (ctx) => {
+    await startUniversitySubmissionWizard(ctx);
   });
 
   bot.hears("ارسال محتوای دانشگاه", async (ctx) => {
@@ -5176,8 +5280,12 @@ function registerHandlers(bot) {
     await showIndustryStaticPanel(ctx, "profile");
   });
 
+  bot.hears("تابلو فرصت ها", async (ctx) => {
+    await showIndustryOpportunitiesPanel(ctx, "board", 0);
+  });
+
   bot.hears("پیشنهاد فرصت ها", async (ctx) => {
-    await showIndustryOpportunitiesPanel(ctx, "recommender", 0);
+    await showIndustryOpportunitiesPanel(ctx, "board", 0);
   });
 
   bot.hears("برد فرصت ها", async (ctx) => {
@@ -5188,20 +5296,24 @@ function registerHandlers(bot) {
     await showIndustryTrackerPanel(ctx);
   });
 
+  bot.hears("مرکز پروژه ها", async (ctx) => {
+    await showIndustryProjectsPanel(ctx, 0);
+  });
+
   bot.hears("هاب پروژه ها", async (ctx) => {
     await showIndustryProjectsPanel(ctx, 0);
   });
 
   bot.hears("اجرای پروژه", async (ctx) => {
-    await showIndustryWorkspacePanel(ctx);
+    await showIndustryProjectsPanel(ctx, 0);
   });
 
   bot.hears("مسیر شغلی", async (ctx) => {
-    await showIndustryStaticPanel(ctx, "career");
+    await ctx.reply("بخش مسیر شغلی فعلا در طراحی اولیه غیرفعال است.", industryMenu());
   });
 
   bot.hears("منابع صنعتی", async (ctx) => {
-    await showIndustryResourcesPanel(ctx, 0);
+    await ctx.reply("بخش منابع صنعتی فعلا در طراحی اولیه غیرفعال است.", industryMenu());
   });
 
   bot.hears(/^بازگشت به پنل صنعت$/i, async (ctx) => {
@@ -5312,16 +5424,19 @@ function registerHandlers(bot) {
   });
 
   bot.hears(/^بروزرسانی اجرای پروژه$/i, async (ctx) => {
-    await showIndustryWorkspacePanel(ctx);
+    const session = getIndustrySession(ctx);
+    await showIndustryProjectsPanel(ctx, Number(session?.page || 0));
   });
 
   bot.hears(/^ثبت پیشرفت$/i, async (ctx) => {
-    setIndustrySession(ctx, { mode: "workspace-await-progress" });
+    const session = getIndustrySession(ctx);
+    setIndustrySession(ctx, { mode: "workspace-await-progress", page: Number(session?.page || 0) });
     await ctx.reply("فرمت: <studentProjectId> <0-100>", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
   });
 
   bot.hears(/^ثبت لینک خروجی$/i, async (ctx) => {
-    setIndustrySession(ctx, { mode: "workspace-await-link" });
+    const session = getIndustrySession(ctx);
+    setIndustrySession(ctx, { mode: "workspace-await-link", page: Number(session?.page || 0) });
     await ctx.reply("فرمت: <studentProjectId> <url>", Markup.keyboard([["لغو"], [INDUSTRY_PANEL_BACK]]).resize());
   });
 
