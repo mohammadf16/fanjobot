@@ -4,7 +4,7 @@ const { config } = require("../config");
 
 const router = express.Router();
 const assetsDir = path.join(__dirname, "..", "admin-ui", "assets");
-const assetVersion = "20260219-13";
+const assetVersion = "20260223-01";
 
 function escapeAttr(value) {
   return String(value || "")
@@ -132,7 +132,7 @@ function renderMiniAppPage() {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f766e" />
-  <title>مینی‌اپ فنجوبو</title>
+  <title>مینی‌اپ فنجو</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="/admin/assets/miniapp.css?v=${assetVersion}" />
 </head>
@@ -140,7 +140,7 @@ function renderMiniAppPage() {
   <div class="mini-shell">
     <header class="mini-top glass">
       <div>
-        <h1>🚀 فنجوبو</h1>
+        <h1>🚀 فنجو</h1>
         <p id="miniUserLabel">درحال اتصال...</p>
       </div>
       <div class="mini-actions">
@@ -327,7 +327,7 @@ function renderMiniAppPage() {
           <div class="form-grid">
             <label>
               <span style="display: block; margin-bottom: 6px;">رمز عبور</span>
-              <button class="btn ghost" onclick="alert('برای تغییر رمز روی تلگرام بات فنجوبو لمس کنید')">تغییر رمز عبور</button>
+              <button class="btn ghost" onclick="alert('برای تغییر رمز روی تلگرام بات فنجو لمس کنید')">تغییر رمز عبور</button>
             </label>
           </div>
         </article>
@@ -344,7 +344,7 @@ function renderMiniAppPage() {
             </div>
             <div class="kv-row">
               <div class="kv-key">توسعه</div>
-              <div class="kv-value">فنجوبو تیم</div>
+              <div class="kv-value">فنجو تیم</div>
             </div>
           </div>
         </article>
@@ -846,6 +846,26 @@ const integrationsContent = `
     <pre id="notifDetailBox" class="codebox compact">Select a notification to inspect payload.</pre>
   </article>
 </section>
+
+<section class="card">
+  <div class="section-head">
+    <h3>Telegram Channel Membership Gate</h3>
+    <div class="toolbar">
+      <button id="membershipLoadBtn" class="btn ghost">Load Current</button>
+      <button id="membershipSaveBtn" class="btn">Save</button>
+    </div>
+  </div>
+  <div class="toolbar">
+    <label class="check-row">
+      <input id="membershipRequiredInput" type="checkbox" />
+      Require users to join channel before using bot
+    </label>
+  </div>
+  <div class="toolbar">
+    <input id="membershipChannelInput" placeholder="@Industry_talk or https://t.me/Industry_talk" />
+  </div>
+  <div id="membershipMetaBox" class="meta-text">Membership gate setting not loaded.</div>
+</section>
 `;
 
 const supportContent = `
@@ -1061,7 +1081,7 @@ router.get("/admin/integrations", (_req, res) => {
     renderPage({
       title: "Fanjobo Admin | Integrations",
       heading: "Integrations",
-      subtitle: "Drive checks and platform notifications",
+      subtitle: "Drive checks, notifications, and channel membership gate",
       activeNav: "integrations",
       content: integrationsContent,
       scriptName: "integrations.js"

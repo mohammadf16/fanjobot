@@ -5,6 +5,12 @@ const { getLogs } = require("../services/logger");
 const { testDriveReadWrite } = require("../services/googleDrive");
 const { isBotAvailable, sendTelegramMessage } = require("../bot");
 const { ensureSupportTables } = require("../services/supportTickets");
+const {
+  ensureBotAccessSettingsTable,
+  getBotAccessSettings,
+  updateBotAccessSettings,
+  normalizeChannelUsername
+} = require("../services/botAccessSettings");
 
 const router = express.Router();
 
@@ -107,7 +113,7 @@ function wait(ms) {
 function buildSubmissionDecisionMessage(submission, action, reason) {
   const approved = action === "approve";
   const lines = [
-    "به روزرسانی بررسی محتوا - فنجوبو",
+    "به روزرسانی بررسی محتوا - فنجو",
     "",
     `عنوان: ${submission.title || "-"}`,
     `نتیجه: ${approved ? "تایید شد" : "رد شد"}`
@@ -118,7 +124,7 @@ function buildSubmissionDecisionMessage(submission, action, reason) {
     lines.push(`دلیل: ${normalizedReason}`);
   }
 
-  lines.push("", "برای مشاهده جزئیات وارد ربات فنجوبو شوید.");
+  lines.push("", "برای مشاهده جزئیات وارد ربات فنجو شوید.");
   return lines.join("\n");
 }
 
@@ -286,7 +292,7 @@ function buildIndustryProjectUpdateMessage(project, status) {
 
 function buildSupportAdminReplyMessage(ticketId, subject, status, message) {
   return [
-    "پاسخ پشتیبانی فنجوبو",
+    "پاسخ پشتیبانی فنجو",
     "",
     `تیکت #${ticketId}`,
     `موضوع: ${subject || "-"}`,
@@ -297,7 +303,7 @@ function buildSupportAdminReplyMessage(ticketId, subject, status, message) {
 }
 
 function buildUserBroadcastText(message) {
-  return `📢 پیام ادمین فنجوبو\n\n${message}`;
+  return `📢 پیام ادمین فنجو\n\n${message}`;
 }
 
 function buildContentPublishStatusMessage(contentId, title, isPublished) {
@@ -308,7 +314,7 @@ function buildContentPublishStatusMessage(contentId, title, isPublished) {
     `عنوان: ${title || "-"}`,
     `انتشار: ${isPublished ? "منتشر شد" : "از انتشار خارج شد"}`,
     "",
-    "برای دیدن آخرین وضعیت وارد ربات فنجوبو شوید."
+    "برای دیدن آخرین وضعیت وارد ربات فنجو شوید."
   ].join("\n");
 }
 
@@ -390,7 +396,7 @@ function normalizeProfileForUpsert(rawInput, fallback = null) {
 router.use(requireAdmin);
 router.use(async (_req, _res, next) => {
   try {
-    await ensureSupportTables();
+    await Promise.all([ensureSupportTables(), ensureBotAccessSettingsTable()]);
     next();
   } catch (error) {
     next(error);
@@ -678,6 +684,41 @@ router.post("/integrations/drive/check", async (req, res, next) => {
       message: "Drive read/write check passed.",
       result
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/integrations/channel-membership", async (_req, res, next) => {
+  try {
+    const settings = await getBotAccessSettings();
+    res.json({ settings });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/integrations/channel-membership", async (req, res, next) => {
+  try {
+    const hasMembershipRequired = Object.prototype.hasOwnProperty.call(req.body || {}, "membershipRequired");
+    const hasChannel = Object.prototype.hasOwnProperty.call(req.body || {}, "channel");
+    const hasChannelUsername = Object.prototype.hasOwnProperty.call(req.body || {}, "channelUsername");
+
+    if (!hasMembershipRequired && !hasChannel && !hasChannelUsername) {
+      return res.status(400).json({ error: "membershipRequired or channel/channelUsername must be provided" });
+    }
+
+    const rawChannelInput = hasChannelUsername ? req.body?.channelUsername : req.body?.channel;
+    if ((hasChannel || hasChannelUsername) && !normalizeChannelUsername(rawChannelInput)) {
+      return res.status(400).json({ error: "Invalid channel username or link" });
+    }
+
+    const next = await updateBotAccessSettings({
+      membershipRequired: hasMembershipRequired ? req.body?.membershipRequired : undefined,
+      channel: hasChannel || hasChannelUsername ? rawChannelInput : undefined
+    });
+
+    res.json({ settings: next });
   } catch (error) {
     next(error);
   }

@@ -6,6 +6,12 @@ const { query } = require("./db");
 const { uploadBufferToDrive, downloadDriveFileToPath } = require("./services/googleDrive");
 const { logInfo, logError } = require("./services/logger");
 const { ensureSupportTables } = require("./services/supportTickets");
+const { ensureMyPathTables } = require("./services/myPathSchema");
+const {
+  ensureBotAccessSettingsTable,
+  getBotAccessSettings,
+  buildChannelUrl
+} = require("./services/botAccessSettings");
 const {
   buildSkillMap,
   levelToNumber,
@@ -31,6 +37,9 @@ const BOOK_PANEL_PAGE_SIZE = 5;
 const BOOK_PANEL_FETCH_LIMIT = 120;
 let bookCacheSweepTimer = null;
 let activeBotInstance = null;
+let botAccessSettingsCache = null;
+let botAccessSettingsLoadedAt = 0;
+const membershipPromptCooldown = new Map();
 
 const LABEL_START = "🚀 شروع";
 const LABEL_PROFILE = "🧾 تکمیل پروفایل";
@@ -45,7 +54,11 @@ const ADMIN_MENU_TICKETS = "🎫 تیکت های باز";
 const ADMIN_MENU_NOTIFS = "📬 نوتیف های باز";
 const ADMIN_MENU_STARTED = "👥 کاربران استارت کرده";
 const ADMIN_MENU_SUBMISSIONS = "🗂️ تایید/رد آپلودها";
+const ADMIN_MENU_MEMBER_GATE = "📢 اجبار عضویت کانال";
 const ADMIN_MENU_HELP = "🧾 راهنمای ادمین";
+const ADMIN_MEMBER_GATE_TOGGLE = "🔁 تغییر وضعیت اجبار";
+const ADMIN_MEMBER_GATE_SET_CHANNEL = "🔗 تنظیم کانال عضویت";
+const ADMIN_MEMBER_GATE_BACK = "🔙 بازگشت به پنل ادمین";
 const ADMIN_SUBMISSIONS_DETAIL = "🔎 جزئیات ارسال";
 const ADMIN_SUBMISSIONS_APPROVE = "✅ تایید ارسال";
 const ADMIN_SUBMISSIONS_REJECT = "❌ رد ارسال";
@@ -86,6 +99,9 @@ const STATIC_ADMIN_USERNAMES = new Set(["immohammadf"]);
 const INDUSTRY_PANEL_PAGE_SIZE = 5;
 const ADMIN_SUBMISSIONS_PAGE_SIZE = 5;
 const START_SHORTCUT_HINT = "\n\nاگر گیر کردی: /start";
+const MEMBER_GATE_CHECK_ACTION = "membergate:check";
+const BOT_ACCESS_CACHE_TTL_MS = 15000;
+const MEMBERSHIP_PROMPT_COOLDOWN_MS = 12000;
 
 const MAJOR_FAMILIES = [
   "مهندسی صنایع",
@@ -337,8 +353,16 @@ function adminPanelMenu() {
     [ADMIN_MENU_STATS, ADMIN_MENU_TICKETS],
     [ADMIN_MENU_NOTIFS, ADMIN_MENU_STARTED],
     [ADMIN_MENU_SUBMISSIONS],
+    [ADMIN_MENU_MEMBER_GATE],
     [ADMIN_MENU_HELP],
     [ADMIN_MENU_BACK]
+  ]).resize();
+}
+
+function adminMemberGateMenu() {
+  return Markup.keyboard([
+    [ADMIN_MEMBER_GATE_TOGGLE, ADMIN_MEMBER_GATE_SET_CHANNEL],
+    [ADMIN_MEMBER_GATE_BACK]
   ]).resize();
 }
 
@@ -2169,6 +2193,103 @@ function normalizeTelegramUsername(value) {
   return raw.replace(/^@/, "").trim();
 }
 
+function isPrivateUserChat(ctx) {
+  return String(ctx.chat?.type || "").toLowerCase() === "private";
+}
+
+function clearBotAccessSettingsCache() {
+  botAccessSettingsCache = null;
+  botAccessSettingsLoadedAt = 0;
+}
+
+async function getBotAccessSettingsCached({ forceRefresh = false } = {}) {
+  const now = Date.now();
+  const hasFreshCache =
+    botAccessSettingsCache &&
+    now - botAccessSettingsLoadedAt < BOT_ACCESS_CACHE_TTL_MS;
+
+  if (!forceRefresh && hasFreshCache) {
+    return botAccessSettingsCache;
+  }
+
+  const settings = await getBotAccessSettings();
+  botAccessSettingsCache = settings;
+  botAccessSettingsLoadedAt = now;
+  return settings;
+}
+
+function membershipPromptKeyboard(settings) {
+  const rows = [];
+  const channelUrl = buildChannelUrl(settings?.channelUsername || "");
+  if (channelUrl) {
+    rows.push([Markup.button.url("📢 عضویت در کانال", channelUrl)]);
+  }
+  rows.push([Markup.button.callback("✅ بررسی عضویت", MEMBER_GATE_CHECK_ACTION)]);
+  return Markup.inlineKeyboard(rows);
+}
+
+function isMembershipStatusAllowed(status) {
+  return ["creator", "administrator", "member", "restricted"].includes(String(status || "").toLowerCase());
+}
+
+function shouldSendMembershipPrompt(userId, force = false) {
+  if (force) return true;
+  if (!userId) return true;
+
+  const now = Date.now();
+  const last = Number(membershipPromptCooldown.get(userId) || 0);
+  if (now - last < MEMBERSHIP_PROMPT_COOLDOWN_MS) {
+    return false;
+  }
+
+  membershipPromptCooldown.set(userId, now);
+  return true;
+}
+
+async function sendMembershipRequiredPrompt(ctx, settings, { force = false } = {}) {
+  const userId = Number(ctx.from?.id || 0);
+  if (!shouldSendMembershipPrompt(userId, force)) return;
+
+  const channelText = settings?.channelUsername || "-";
+  const channelUrl = buildChannelUrl(channelText);
+  const lines = [
+    "برای استفاده از ربات فنجو باید عضو کانال باشید.",
+    `کانال: ${channelText}${channelUrl ? `\nلینک: ${channelUrl}` : ""}`,
+    "بعد از عضویت، روی «✅ بررسی عضویت» بزن."
+  ];
+
+  await ctx.reply(lines.join("\n"), membershipPromptKeyboard(settings));
+}
+
+async function ensureMembershipGatePass(ctx, { forceRefreshSettings = false, forcePrompt = false } = {}) {
+  if (!isPrivateUserChat(ctx)) return true;
+  if (isBotAdminContext(ctx)) return true;
+
+  const settings = await getBotAccessSettingsCached({ forceRefresh: forceRefreshSettings });
+  if (!settings?.membershipRequired) return true;
+  if (!settings.channelUsername) return true;
+
+  const userId = Number(ctx.from?.id || 0);
+  if (!userId) {
+    await sendMembershipRequiredPrompt(ctx, settings, { force: forcePrompt });
+    return false;
+  }
+
+  try {
+    const member = await ctx.telegram.getChatMember(settings.channelUsername, userId);
+    if (isMembershipStatusAllowed(member?.status)) return true;
+  } catch (error) {
+    logError("Membership gate check failed", {
+      error: error?.message || String(error),
+      userId,
+      channel: settings.channelUsername
+    });
+  }
+
+  await sendMembershipRequiredPrompt(ctx, settings, { force: forcePrompt });
+  return false;
+}
+
 async function ensureSupportAdminAccess(ctx) {
   if (isBotAdminContext(ctx)) return true;
   await ctx.reply("این دستور فقط برای ادمین فعال است.");
@@ -2270,8 +2391,81 @@ async function showAdminHelpFromBot(ctx) {
       "/closeticket <id> -> بستن تیکت\n" +
       "/submissions -> صف تایید آپلودها\n" +
       "/approve <id> -> تایید ارسال\n" +
-      "/reject <id> <دلیل> -> رد ارسال"
+      "/reject <id> <دلیل> -> رد ارسال\n" +
+      "تنظیم عضویت کانال -> مدیریت اجبار عضویت در کانال"
   );
+}
+
+function describeMembershipGateSettings(settings) {
+  const enabled = settings?.membershipRequired ? "فعال" : "غیرفعال";
+  const channel = settings?.channelUsername || "-";
+  const url = settings?.channelUrl || buildChannelUrl(channel) || "-";
+  return (
+    "📢 تنظیمات اجبار عضویت کانال\n\n" +
+    `وضعیت: ${enabled}\n` +
+    `کانال: ${channel}\n` +
+    `لینک: ${url}\n\n` +
+    `گزینه های مدیریت:\n` +
+    `- ${ADMIN_MEMBER_GATE_TOGGLE}\n` +
+    `- ${ADMIN_MEMBER_GATE_SET_CHANNEL}`
+  );
+}
+
+async function showAdminMembershipGatePanel(ctx, { forceRefresh = false } = {}) {
+  if (!(await ensureSupportAdminAccess(ctx))) return;
+  try {
+    const data = await adminPanelApiRequest(ctx, "/api/admin/integrations/channel-membership");
+    const settings = data?.settings || null;
+    setAdminSession(ctx, { mode: "admin-member-gate" });
+    await ctx.reply(describeMembershipGateSettings(settings), adminMemberGateMenu());
+
+    if (forceRefresh) {
+      clearBotAccessSettingsCache();
+      await getBotAccessSettingsCached({ forceRefresh: true });
+    }
+  } catch (error) {
+    await ctx.reply(`خواندن تنظیمات عضویت انجام نشد: ${error?.message || "خطای نامشخص"}`, adminPanelMenu());
+  }
+}
+
+async function toggleAdminMembershipGate(ctx) {
+  if (!(await ensureSupportAdminAccess(ctx))) return;
+  try {
+    const currentData = await adminPanelApiRequest(ctx, "/api/admin/integrations/channel-membership");
+    const current = currentData?.settings || {};
+    const next = await adminPanelApiRequest(ctx, "/api/admin/integrations/channel-membership", {
+      method: "PATCH",
+      body: { membershipRequired: !Boolean(current.membershipRequired) }
+    });
+
+    clearBotAccessSettingsCache();
+    await getBotAccessSettingsCached({ forceRefresh: true });
+    await ctx.reply(`وضعیت اجبار عضویت ${next?.settings?.membershipRequired ? "فعال" : "غیرفعال"} شد.`);
+    await showAdminMembershipGatePanel(ctx);
+  } catch (error) {
+    await ctx.reply(`تغییر وضعیت اجبار عضویت انجام نشد: ${error?.message || "خطای نامشخص"}`, adminMemberGateMenu());
+  }
+}
+
+async function setAdminMembershipGateChannel(ctx, channelRaw) {
+  if (!(await ensureSupportAdminAccess(ctx))) return;
+  try {
+    const payload = { channel: String(channelRaw || "").trim() };
+    const next = await adminPanelApiRequest(ctx, "/api/admin/integrations/channel-membership", {
+      method: "PATCH",
+      body: payload
+    });
+
+    clearBotAccessSettingsCache();
+    await getBotAccessSettingsCached({ forceRefresh: true });
+    await ctx.reply(`کانال عضویت به ${next?.settings?.channelUsername || "-"} تنظیم شد.`);
+    await showAdminMembershipGatePanel(ctx);
+  } catch (error) {
+    await ctx.reply(
+      `تنظیم کانال انجام نشد: ${error?.message || "خطای نامشخص"}\nفرمت درست: @Industry_talk یا https://t.me/Industry_talk`,
+      adminMemberGateMenu()
+    );
+  }
 }
 
 function adminPanelAuthHeaders(ctx) {
@@ -2420,7 +2614,12 @@ async function handleAdminPanelInput(ctx) {
   const text = String(ctx.message?.text || "").trim();
   if (!text) return false;
 
-  if (text === "لغو" || text === ADMIN_SUBMISSIONS_BACK) {
+  const backToAdminPanel =
+    text === "بازگشت به پنل ادمین" ||
+    text === ADMIN_SUBMISSIONS_BACK ||
+    text === ADMIN_MEMBER_GATE_BACK;
+
+  if (text === "لغو" || backToAdminPanel) {
     clearAdminSession(ctx);
     await showAdminBotPanel(ctx);
     return true;
@@ -2456,6 +2655,11 @@ async function handleAdminPanelInput(ctx) {
     }
     await reviewAdminSubmissionById(ctx, Number(match[1]), "reject", String(match[2] || "").trim());
     await showAdminSubmissionQueuePanel(ctx, session.page || 0);
+    return true;
+  }
+
+  if (session.mode === "admin-member-gate-await-channel") {
+    await setAdminMembershipGateChannel(ctx, text);
     return true;
   }
 
@@ -4838,8 +5042,16 @@ const menuLabelAliases = new Map([
   [ADMIN_MENU_STARTED, "کاربران استارت کرده"],
   ["کاربران استارت کرده", ADMIN_MENU_STARTED],
   [ADMIN_MENU_SUBMISSIONS, "تایید/رد آپلودها"],
+  [ADMIN_MENU_MEMBER_GATE, "اجبار عضویت کانال"],
+  ["اجبار عضویت کانال", ADMIN_MENU_MEMBER_GATE],
+  ["تنظیم عضویت کانال", ADMIN_MENU_MEMBER_GATE],
   [ADMIN_MENU_HELP, "راهنمای ادمین"],
   ["راهنمای ادمین", ADMIN_MENU_HELP],
+  [ADMIN_MEMBER_GATE_TOGGLE, "تغییر وضعیت اجبار"],
+  ["تغییر وضعیت اجبار", ADMIN_MEMBER_GATE_TOGGLE],
+  [ADMIN_MEMBER_GATE_SET_CHANNEL, "تنظیم کانال عضویت"],
+  ["تنظیم کانال عضویت", ADMIN_MEMBER_GATE_SET_CHANNEL],
+  [ADMIN_MEMBER_GATE_BACK, "بازگشت به پنل ادمین"],
   [ADMIN_SUBMISSIONS_DETAIL, "جزئیات ارسال"],
   [ADMIN_SUBMISSIONS_APPROVE, "تایید ارسال"],
   [ADMIN_SUBMISSIONS_REJECT, "رد ارسال"],
@@ -5146,6 +5358,67 @@ function registerHandlers(bot) {
     const originalReply = ctx.reply.bind(ctx);
     ctx.reply = (text, extra) => originalReply(withStartShortcut(text), extra);
     return next();
+  });
+
+  bot.use(async (ctx, next) => {
+    if (ctx.callbackQuery?.data === MEMBER_GATE_CHECK_ACTION) {
+      return next();
+    }
+
+    try {
+      const passed = await ensureMembershipGatePass(ctx);
+      if (!passed) {
+        if (ctx.callbackQuery) {
+          try {
+            await ctx.answerCbQuery("ابتدا عضو کانال شوید.");
+          } catch (_error) {
+            // ignore answer callback errors
+          }
+        }
+        return;
+      }
+    } catch (error) {
+      logError("Membership gate middleware failed", {
+        error: error?.message || String(error),
+        telegramId: String(ctx.from?.id || "")
+      });
+      await ctx.reply("خطا در بررسی عضویت کانال. کمی بعد دوباره تلاش کن.");
+      return;
+    }
+
+    return next();
+  });
+
+  bot.action(MEMBER_GATE_CHECK_ACTION, async (ctx) => {
+    let passed = false;
+    try {
+      passed = await ensureMembershipGatePass(ctx, {
+        forceRefreshSettings: true,
+        forcePrompt: true
+      });
+    } catch (error) {
+      logError("Membership gate callback failed", {
+        error: error?.message || String(error),
+        telegramId: String(ctx.from?.id || "")
+      });
+    }
+
+    if (passed) {
+      membershipPromptCooldown.delete(Number(ctx.from?.id || 0));
+      try {
+        await ctx.answerCbQuery("عضویت تایید شد ✅");
+      } catch (_error) {
+        // ignore answer callback errors
+      }
+      await ctx.reply("✅ عضویت شما تایید شد. حالا می‌تونی از منو استفاده کنی.", mainMenuForContext(ctx));
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery("هنوز عضویت شما تایید نشد.", { show_alert: true });
+    } catch (_error) {
+      // ignore answer callback errors
+    }
   });
 
   bot.action("booklist:refresh", async (ctx) => {
@@ -5701,6 +5974,26 @@ function registerHandlers(bot) {
     await showAdminSubmissionQueuePanel(ctx, 0);
   });
 
+  bot.hears(/^اجبار عضویت کانال$/i, async (ctx) => {
+    await showAdminMembershipGatePanel(ctx);
+  });
+
+  bot.hears(/^تنظیم عضویت کانال$/i, async (ctx) => {
+    await showAdminMembershipGatePanel(ctx);
+  });
+
+  bot.hears(/^تغییر وضعیت اجبار$/i, async (ctx) => {
+    await toggleAdminMembershipGate(ctx);
+  });
+
+  bot.hears(/^تنظیم کانال عضویت$/i, async (ctx) => {
+    setAdminSession(ctx, { mode: "admin-member-gate-await-channel" });
+    await ctx.reply(
+      "یوزرنیم یا لینک کانال را بفرست. مثال: @Industry_talk یا https://t.me/Industry_talk",
+      Markup.keyboard([["لغو"], [ADMIN_MEMBER_GATE_BACK]]).resize()
+    );
+  });
+
   bot.hears(/^قبلی صف تایید$/i, async (ctx) => {
     const session = getAdminSession(ctx);
     await showAdminSubmissionQueuePanel(ctx, Math.max(0, Number(session?.page || 0) - 1));
@@ -5907,6 +6200,10 @@ async function attachBot(app) {
     activeBotInstance = null;
     return null;
   }
+
+  await Promise.all([ensureSupportTables(), ensureMyPathTables(), ensureBotAccessSettingsTable()]);
+  clearBotAccessSettingsCache();
+  await getBotAccessSettingsCached({ forceRefresh: true });
 
   const bot = new Telegraf(config.telegramBotToken);
   registerHandlers(bot);

@@ -577,6 +577,16 @@ CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_i
 CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
 CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket_id ON support_ticket_messages(ticket_id);
 
+CREATE TABLE IF NOT EXISTS bot_access_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  membership_required INTEGER NOT NULL DEFAULT 1,
+  channel_username TEXT NOT NULL DEFAULT '@Industry_talk',
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO bot_access_settings (id, membership_required, channel_username, updated_at)
+VALUES (1, 1, '@Industry_talk', CURRENT_TIMESTAMP);
+
 CREATE TABLE IF NOT EXISTS my_path_profiles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,

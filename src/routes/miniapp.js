@@ -8,6 +8,7 @@ const { config } = require("../config");
 const { isBotAvailable, sendTelegramDocument, sendTelegramMessage } = require("../bot");
 const { downloadDriveFileToPath, uploadBufferToDrive } = require("../services/googleDrive");
 const { ensureSupportTables } = require("../services/supportTickets");
+const { ensureMyPathTables } = require("../services/myPathSchema");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -348,7 +349,7 @@ async function resolveUserById(userId) {
 
 router.use(async (_req, _res, next) => {
   try {
-    await ensureSupportTables();
+    await Promise.all([ensureSupportTables(), ensureMyPathTables()]);
     next();
   } catch (error) {
     next(error);
@@ -1167,7 +1168,7 @@ router.post("/admin/support/tickets/:ticketId/reply", requireMiniAppAdmin, async
     const notify = await notifyTelegramUser(
       ticket.user_id,
       [
-        "پاسخ پشتیبانی فنجوبو",
+        "پاسخ پشتیبانی فنجو",
         "",
         `تیکت #${ticketId}`,
         `موضوع: ${ticket.subject || "-"}`,
@@ -1288,7 +1289,7 @@ router.post("/admin/moderation/submissions/:submissionId/review", requireMiniApp
       const notify = await notifyTelegramUser(
         submission.user_id,
         [
-          "به روزرسانی بررسی محتوا - فنجوبو",
+          "به روزرسانی بررسی محتوا - فنجو",
           "",
           `عنوان: ${submission.title || "-"}`,
           "نتیجه: تایید شد",
@@ -1330,7 +1331,7 @@ router.post("/admin/moderation/submissions/:submissionId/review", requireMiniApp
     const notify = await notifyTelegramUser(
       submission.user_id,
       [
-        "به روزرسانی بررسی محتوا - فنجوبو",
+        "به روزرسانی بررسی محتوا - فنجو",
         "",
         `عنوان: ${submission.title || "-"}`,
         "نتیجه: رد شد",
@@ -1405,7 +1406,7 @@ router.post("/admin/broadcast/send", requireMiniAppAdmin, async (req, res, next)
       });
     }
 
-    const outboundText = `📢 پیام ادمین فنجوبو\n\n${message}`;
+    const outboundText = `📢 پیام ادمین فنجو\n\n${message}`;
     let sentCount = 0;
     let failedCount = 0;
     const failures = [];

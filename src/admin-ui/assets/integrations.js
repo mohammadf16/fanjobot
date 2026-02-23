@@ -1,6 +1,7 @@
 (function () {
   var notificationsCache = [];
   var driveResultCache = null;
+  var membershipSettingsCache = null;
 
   function el(id) {
     return document.getElementById(id);
@@ -43,6 +44,39 @@
         .join("") || "<tr><td colspan='6'>No notifications found.</td></tr>";
   }
 
+  function renderMembershipSettings(settings) {
+    membershipSettingsCache = settings || null;
+
+    if (!settings) {
+      if (el("membershipMetaBox")) {
+        el("membershipMetaBox").textContent = "Membership gate setting not loaded.";
+      }
+      return;
+    }
+
+    if (el("membershipRequiredInput")) {
+      el("membershipRequiredInput").checked = Boolean(settings.membershipRequired);
+    }
+    if (el("membershipChannelInput")) {
+      el("membershipChannelInput").value = String(settings.channelUsername || "");
+    }
+
+    var parts = [
+      "Status: " + (settings.membershipRequired ? "Enabled" : "Disabled"),
+      "Channel: " + (settings.channelUsername || "-")
+    ];
+    if (settings.channelUrl) {
+      parts.push("Link: " + settings.channelUrl);
+    }
+    if (settings.updatedAt) {
+      parts.push("Updated: " + settings.updatedAt);
+    }
+
+    if (el("membershipMetaBox")) {
+      el("membershipMetaBox").textContent = parts.join(" | ");
+    }
+  }
+
   async function runDriveCheck() {
     var folderId = String((el("driveFolderInput") || {}).value || "").trim();
     var body = folderId ? { folderId: folderId } : {};
@@ -57,6 +91,25 @@
   async function loadNotifications() {
     var data = await AdminCore.api("/api/admin/notifications?" + buildNotifQuery());
     renderNotifications(data.items || []);
+  }
+
+  async function loadMembershipSettings() {
+    var data = await AdminCore.api("/api/admin/integrations/channel-membership");
+    renderMembershipSettings(data.settings || null);
+  }
+
+  async function saveMembershipSettings() {
+    var required = Boolean((el("membershipRequiredInput") || {}).checked);
+    var channel = String((el("membershipChannelInput") || {}).value || "").trim();
+    var body = { membershipRequired: required };
+    if (channel) body.channel = channel;
+
+    var data = await AdminCore.api("/api/admin/integrations/channel-membership", {
+      method: "PATCH",
+      body: body
+    });
+
+    renderMembershipSettings(data.settings || null);
   }
 
   async function resolveNotification(id) {
@@ -178,12 +231,37 @@
           AdminCore.setStatus(error.message || "Failed to resolve notification.", "bad");
         });
     });
+
+    if (el("membershipLoadBtn")) {
+      el("membershipLoadBtn").addEventListener("click", function () {
+        loadMembershipSettings()
+          .then(function () {
+            AdminCore.setStatus("Membership gate settings loaded.", "ok");
+          })
+          .catch(function (error) {
+            AdminCore.setStatus(error.message || "Failed to load membership gate settings.", "bad");
+          });
+      });
+    }
+
+    if (el("membershipSaveBtn")) {
+      el("membershipSaveBtn").addEventListener("click", function () {
+        saveMembershipSettings()
+          .then(function () {
+            AdminCore.setStatus("Membership gate settings saved.", "ok");
+            AdminCore.toast("Membership gate settings saved.", "ok");
+          })
+          .catch(function (error) {
+            AdminCore.setStatus(error.message || "Failed to save membership gate settings.", "bad");
+          });
+      });
+    }
   }
 
   document.addEventListener("DOMContentLoaded", bindActions);
 
   window.addEventListener("admin:auth-ready", function () {
-    loadNotifications().catch(function (error) {
+    Promise.all([loadNotifications(), loadMembershipSettings()]).catch(function (error) {
       AdminCore.setStatus(error.message || "Failed to load integrations data.", "bad");
     });
   });

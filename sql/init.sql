@@ -577,6 +577,17 @@ CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id ON support_tickets(user_i
 CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
 CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket_id ON support_ticket_messages(ticket_id);
 
+CREATE TABLE IF NOT EXISTS bot_access_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  membership_required BOOLEAN NOT NULL DEFAULT TRUE,
+  channel_username TEXT NOT NULL DEFAULT '@Industry_talk',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO bot_access_settings (id, membership_required, channel_username, updated_at)
+VALUES (1, TRUE, '@Industry_talk', NOW())
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS my_path_profiles (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
