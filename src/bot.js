@@ -42,7 +42,7 @@ let botAccessSettingsLoadedAt = 0;
 const membershipPromptCooldown = new Map();
 
 const LABEL_START = "🚀 شروع";
-const LABEL_PROFILE = "🧾 تکمیل پروفایل";
+const LABEL_PROFILE = "🧾 پروفایل / ویرایش";
 const LABEL_UNIVERSITY = "🏫 دانشگاه";
 const LABEL_INDUSTRY = "🏭 صنعت";
 const LABEL_MY_PATH = "🧭 مسیر من";
@@ -157,9 +157,29 @@ const MAJOR_TRACKS = {
 
 const LEVEL_OPTIONS = ["کاردانی", "کارشناسی", "کارشناسی ارشد", "دکتری"];
 const TERM_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
-const GOAL_OPTIONS = ["کارآموزی", "شغل", "پروژه رزومه", "قبولی دروس"];
+const GOAL_OPTIONS = [
+  "بهبود معدل",
+  "قبولی دروس مهم",
+  "آمادگی آزمون ارشد/دکتری",
+  "کارآموزی مرتبط",
+  "پروژه رزومه ای",
+  "تقویت مهارت های عملی"
+];
 const HOURS_OPTIONS = ["6", "10", "15", "20"];
-const INTEREST_OPTIONS = ["ai", "web", "backend", "frontend", "data", "robotics"];
+const INTEREST_OPTIONS = [
+  "تحلیل داده",
+  "برنامه نویسی",
+  "مدیریت پروژه",
+  "بهینه سازی فرآیند",
+  "تحقیق و مقاله",
+  "کنترل کیفیت",
+  "طراحی و مدل سازی",
+  "تولید و عملیات",
+  "انرژی و محیط زیست",
+  "اتوماسیون و رباتیک",
+  "کارآفرینی",
+  "مالی و اقتصادی"
+];
 const DONE_GOALS = "ثبت اهداف";
 const DONE_INTERESTS = "ثبت علاقه ها";
 const MAJOR_PREV_PAGE = "⬅️ قبلی";
@@ -243,15 +263,34 @@ const PROFILE_STEPS = [
   { key: "major", section: "تحصیل", question: "لطفا گرایش خود را انتخاب کنید.", required: true },
   { key: "level", section: "تحصیل", question: "لطفا مقطع تحصیلی خود را انتخاب کنید.", required: true },
   { key: "term", section: "تحصیل", question: "لطفا ترم فعلی خود را انتخاب کنید.", required: true },
-  { key: "skillLevel", section: "مهارت", question: "سطح مهارت فعلی شما در این حوزه چیست؟", required: true },
-  { key: "shortTermGoal", section: "هدف", question: "اهداف کوتاه مدت خود را انتخاب کنید. (چند گزینه مجاز است، سپس «ثبت اهداف»)", required: true },
+  {
+    key: "skills",
+    section: "مهارت",
+    question: "مهارت های مرتبط و غیرمرتبط با رشته خود را بنویسید. (مثال: اکسل, کنترل پروژه, برنامه نویسی) - اختیاری",
+    required: false
+  },
+  {
+    key: "skillLevel",
+    section: "مهارت",
+    question: "به صورت کلی سطح فعلی مهارت های تخصصی شما در رشته/گرایش تان چقدر است؟ (مبتدی / متوسط / پیشرفته)",
+    required: true
+  },
+  {
+    key: "shortTermGoal",
+    section: "هدف",
+    question: "اهداف کوتاه مدت خود از تحصیل را انتخاب کنید. (چند گزینه مجاز است، سپس «ثبت اهداف»)",
+    required: true
+  },
   { key: "weeklyHours", section: "هدف", question: "به طور متوسط هفته ای چند ساعت زمان آزاد دارید؟", required: true },
   { key: "interests", section: "هدف", question: "علاقه مندی های خود را انتخاب کنید. (چند گزینه مجاز است، سپس «ثبت علاقه ها»)", required: false },
-  { key: "skills", section: "حرفه ای", question: "در صورت تمایل، مهارت های فعلی خود را بنویسید. (مثال: برنامه نویسی، تحلیل داده)", required: false },
   { key: "passedCourses", section: "حرفه ای", question: "در صورت تمایل دروس مهم پاس شده را وارد کنید.", required: false },
-  { key: "resumeUrl", section: "حرفه ای", question: "در صورت تمایل لینک رزومه را وارد کنید.", required: false },
-  { key: "githubUrl", section: "حرفه ای", question: "در صورت تمایل لینک گیتهاب را وارد کنید.", required: false },
-  { key: "portfolioUrl", section: "حرفه ای", question: "در صورت تمایل لینک پورتفولیو را وارد کنید.", required: false }
+  {
+    key: "resumeUrl",
+    section: "حرفه ای",
+    question: "در صورت تمایل لینک رزومه را وارد کنید (Drive/Dropbox/...). آپلود مستقیم رزومه در نسخه بعد فعال می شود.",
+    required: false
+  },
+  { key: "githubUrl", section: "حرفه ای", question: "در صورت تمایل لینک گیتهاب را وارد کنید.", required: false }
 ];
 
 const UNIVERSITY_SUBMISSION_BACK = "❌ لغو ارسال محتوا";
@@ -615,7 +654,7 @@ function createStepKeyboard(step, session) {
     const selected = session?.answers?.interests || [];
     const options = INTEREST_OPTIONS.map((item) => (selected.includes(item) ? `✅ ${item}` : item));
     return Markup.keyboard([
-      ...chunkOptions(options, 3),
+      ...chunkOptions(options, 2),
       [DONE_INTERESTS],
       ["رد", "لغو"]
     ]).resize();
@@ -3101,7 +3140,7 @@ function clampPage(page, totalItems, pageSize = INDUSTRY_PANEL_PAGE_SIZE) {
 async function showIndustryOpportunitiesPanel(ctx, panelType = "board", requestedPage = 0) {
   const { profile, context } = await loadIndustryContext(ctx);
   if (panelType === "recommender" && !profile) {
-    await ctx.reply("برای پیشنهاد شخصی، اول «تکمیل پروفایل» را انجام بده.", industryMenu());
+    await ctx.reply("برای پیشنهاد شخصی، اول «پروفایل / ویرایش» را انجام بده.", industryMenu());
     return;
   }
 
@@ -3315,7 +3354,7 @@ async function showIndustryHome(ctx) {
   const { profile } = await loadIndustryContext(ctx);
   const profileHint = profile
     ? "پروفایل صنعتی شما آماده است. یکی از ماژول ها را انتخاب کن."
-    : "برای خروجی دقیق تر، اول پروفایل را از بخش «تکمیل پروفایل» ثبت کن.";
+    : "برای خروجی دقیق تر، اول پروفایل را از بخش «پروفایل / ویرایش» ثبت کن.";
 
   await ctx.reply(`پنل صنعت فعال شد.\n${profileHint}`, industryMenu());
 }
@@ -3323,7 +3362,7 @@ async function showIndustryHome(ctx) {
 async function showIndustryProfileModule(ctx) {
   const { profile, context } = await loadIndustryContext(ctx);
   if (!profile) {
-    await ctx.reply("پروفایل صنعتی پیدا نشد. اول «تکمیل پروفایل» را انجام بده.", industryMenu());
+    await ctx.reply("پروفایل صنعتی پیدا نشد. اول «پروفایل / ویرایش» را انجام بده.", industryMenu());
     return;
   }
 
@@ -3351,7 +3390,7 @@ async function showIndustryProfileModule(ctx) {
 async function showIndustryRecommenderModule(ctx) {
   const { profile, context } = await loadIndustryContext(ctx);
   if (!profile) {
-    await ctx.reply("برای پیشنهاد شخصی، اول «تکمیل پروفایل» را انجام بده.", industryMenu());
+    await ctx.reply("برای پیشنهاد شخصی، اول «پروفایل / ویرایش» را انجام بده.", industryMenu());
     return;
   }
 
@@ -4842,7 +4881,10 @@ async function startProfileWizard(ctx) {
     ui: { majorPage: 0 }
   });
 
-  await ctx.reply("فرآیند تکمیل پروفایل شروع شد. برای رد کردن سوال های اختیاری: رد | برای انصراف: لغو");
+  await ctx.reply(
+    "فرآیند ایجاد/ویرایش پروفایل شروع شد. ثبت نهایی، اطلاعات قبلی شما را به روز می کند.\n" +
+    "برای رد کردن سوال های اختیاری: رد | برای انصراف: لغو"
+  );
   await askCurrentStep(ctx, profileSessions.get(key));
 }
 
@@ -4918,7 +4960,7 @@ function parseStepValue(step, text, session) {
     return { ok: true, value: parseList(raw) };
   }
 
-  if (["resumeUrl", "githubUrl", "portfolioUrl"].includes(step.key)) {
+  if (["resumeUrl", "githubUrl"].includes(step.key)) {
     if (!validateUrl(raw)) {
       return { ok: false, message: "لینک معتبر نیست. با http:// یا https:// شروع کن." };
     }
@@ -4939,6 +4981,7 @@ function normalizePickedOption(text) {
 const menuLabelAliases = new Map([
   [LABEL_START, "شروع"],
   [LABEL_PROFILE, "تکمیل پروفایل"],
+  ["ویرایش پروفایل", "تکمیل پروفایل"],
   [LABEL_UNIVERSITY, "دانشگاه"],
   [LABEL_INDUSTRY, "صنعت"],
   [LABEL_MY_PATH, "مسیر من"],
@@ -5089,6 +5132,7 @@ function toggleSelection(values, option) {
 
 async function saveProfileAnswers(session) {
   const data = session.answers;
+  const portfolioUrl = data.portfolioUrl || null;
 
   await query(
     `UPDATE users
@@ -5133,7 +5177,7 @@ async function saveProfileAnswers(session) {
       data.weeklyHours,
       data.resumeUrl,
       data.githubUrl,
-      data.portfolioUrl,
+      portfolioUrl,
       JSON.stringify(data.skills || []),
       JSON.stringify(data.passedCourses || [])
     ]
@@ -5150,6 +5194,7 @@ async function handleProfileWizardInput(ctx) {
   const menuActions = new Set([
     "شروع",
     "تکمیل پروفایل",
+    "ویرایش پروفایل",
     "دانشگاه",
     "صنعت",
     "مسیر من",
@@ -5208,12 +5253,12 @@ async function handleProfileWizardInput(ctx) {
 
   if (text === "لغو") {
     profileSessions.delete(key);
-    await ctx.reply("تکمیل پروفایل لغو شد.", mainMenu());
+    await ctx.reply("ویرایش پروفایل لغو شد.", mainMenu());
     return true;
   }
 
   if (menuActions.has(text)) {
-    await ctx.reply("الان در حال تکمیل پروفایل هستیم. پاسخ همین سوال را بده یا بنویس: لغو");
+    await ctx.reply("الان در حال ویرایش پروفایل هستیم. پاسخ همین سوال را بده یا بنویس: لغو");
     return true;
   }
 
@@ -5221,7 +5266,7 @@ async function handleProfileWizardInput(ctx) {
 
   if (!step) {
     profileSessions.delete(key);
-    await ctx.reply("نشست نامعتبر بود. دوباره روی تکمیل پروفایل بزن.", mainMenu());
+    await ctx.reply("نشست نامعتبر بود. دوباره روی «پروفایل / ویرایش» بزن.", mainMenu());
     return true;
   }
 
@@ -5551,7 +5596,7 @@ function registerHandlers(bot) {
 
     if (!profileState.profileComplete) {
       await ctx.reply(
-        "👋 ثبت نام اولیه انجام شد.\nقبل از استفاده از بخش ها، لطفا «تکمیل پروفایل» را کامل کن.",
+        "👋 ثبت نام اولیه انجام شد.\nقبل از استفاده از بخش ها، لطفا «پروفایل / ویرایش» را کامل کن.",
         mainMenuForContext(ctx)
       );
       return;
@@ -5566,12 +5611,12 @@ function registerHandlers(bot) {
     await ctx.reply("🚀 منو آماده است.", mainMenuForContext(ctx));
   });
 
-  bot.hears("تکمیل پروفایل", async (ctx) => {
+  bot.hears(/^(تکمیل پروفایل|ویرایش پروفایل)$/i, async (ctx) => {
     await startProfileWizard(ctx);
   });
 
   bot.command("profile", async (ctx) => {
-    await ctx.reply("برای ثبت پروفایل، روی تکمیل پروفایل بزن تا سوال به سوال جلو بریم.", mainMenu());
+    await ctx.reply("برای ایجاد یا ویرایش پروفایل، روی «پروفایل / ویرایش» بزن تا مرحله به مرحله پیش برویم.", mainMenu());
   });
 
   bot.hears("دانشگاه", async (ctx) => {
