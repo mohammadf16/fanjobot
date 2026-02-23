@@ -21,8 +21,17 @@ function toNullableString(value) {
 }
 
 function toNumber(value, fallback = null) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === "string" && !value.trim()) return fallback;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
+  return parsed;
+}
+
+function toOptionalId(value) {
+  const parsed = toNumber(value, null);
+  if (parsed === null) return null;
+  if (!Number.isInteger(parsed) || parsed < 1) return null;
   return parsed;
 }
 
@@ -717,8 +726,20 @@ router.post("/my-path/tasks", async (req, res, next) => {
     const userId = Number(req.body?.userId);
     const title = toNullableString(req.body?.title);
     const type = String(req.body?.type || "").toLowerCase();
+    const goalId = toOptionalId(req.body?.goalId);
+    const dependencyTaskId = toOptionalId(req.body?.dependencyTaskId);
     if (!userId || !title) return res.status(400).json({ error: "userId and title are required" });
     if (!["study", "practice", "project", "apply", "interview"].includes(type)) return res.status(400).json({ error: "Invalid task type" });
+
+    if (goalId !== null) {
+      const goalRes = await query(`SELECT id FROM my_path_goals WHERE id = $1 AND user_id = $2 LIMIT 1`, [goalId, userId]);
+      if (!goalRes.rows.length) return res.status(400).json({ error: "goalId is invalid for this user" });
+    }
+
+    if (dependencyTaskId !== null) {
+      const depRes = await query(`SELECT id FROM my_path_tasks WHERE id = $1 AND user_id = $2 LIMIT 1`, [dependencyTaskId, userId]);
+      if (!depRes.rows.length) return res.status(400).json({ error: "dependencyTaskId is invalid for this user" });
+    }
 
     const inserted = await query(
       `INSERT INTO my_path_tasks
@@ -727,14 +748,14 @@ router.post("/my-path/tasks", async (req, res, next) => {
        RETURNING *`,
       [
         userId,
-        toNumber(req.body?.goalId, null),
+        goalId,
         toNullableString(req.body?.stepLabel),
         type,
         title,
         Math.max(10, Number(req.body?.estimatedMinutes || 60)),
         Math.max(1, Math.min(5, Number(req.body?.priority || 3))),
         toNullableString(req.body?.dueDate),
-        toNumber(req.body?.dependencyTaskId, null),
+        dependencyTaskId,
         JSON.stringify(parseList(req.body?.attachments)),
         toNullableString(req.body?.plannedWeek)
       ]
@@ -805,8 +826,14 @@ router.post("/my-path/artifacts", async (req, res, next) => {
     const userId = Number(req.body?.userId);
     const title = toNullableString(req.body?.title);
     const type = String(req.body?.type || "").toLowerCase();
+    const goalId = toOptionalId(req.body?.goalId);
     if (!userId || !title) return res.status(400).json({ error: "userId and title are required" });
     if (!["github", "demo", "file", "certificate", "resume_bullet"].includes(type)) return res.status(400).json({ error: "Invalid artifact type" });
+
+    if (goalId !== null) {
+      const goalRes = await query(`SELECT id FROM my_path_goals WHERE id = $1 AND user_id = $2 LIMIT 1`, [goalId, userId]);
+      if (!goalRes.rows.length) return res.status(400).json({ error: "goalId is invalid for this user" });
+    }
 
     const inserted = await query(
       `INSERT INTO my_path_artifacts
@@ -815,7 +842,7 @@ router.post("/my-path/artifacts", async (req, res, next) => {
        RETURNING *`,
       [
         userId,
-        toNumber(req.body?.goalId, null),
+        goalId,
         type,
         title,
         toNullableString(req.body?.url),
