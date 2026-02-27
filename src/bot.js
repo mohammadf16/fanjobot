@@ -36,6 +36,8 @@ const BOOK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const BOOK_CACHE_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const BOOK_PANEL_PAGE_SIZE = 5;
 const BOOK_PANEL_FETCH_LIMIT = 120;
+const NOTE_PANEL_PAGE_SIZE = 5;
+const NOTE_PANEL_FETCH_LIMIT = 120;
 let bookCacheSweepTimer = null;
 let activeBotInstance = null;
 let botAccessSettingsCache = null;
@@ -887,6 +889,16 @@ function sanitizeBookFileName(title) {
   return `${base || "book"}.pdf`;
 }
 
+function sanitizeNoteFileName(title) {
+  const base = String(title || "note")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+
+  return `${base || "note"}.pdf`;
+}
+
 function buildBookPanelKeyboard(items, page, totalPages) {
   const rows = items.map((item) => {
     const labelBase = String(item.title || "کتاب بدون عنوان")
@@ -906,6 +918,25 @@ function buildBookPanelKeyboard(items, page, totalPages) {
   return Markup.inlineKeyboard(rows);
 }
 
+function buildNotePanelKeyboard(items, page, totalPages) {
+  const rows = items.map((item) => {
+    const labelBase = String(item.title || "جزوه بدون عنوان")
+      .replace(/\s+/g, " ")
+      .trim();
+    const label = labelBase.length > 48 ? `${labelBase.slice(0, 45)}...` : labelBase;
+    return [Markup.button.callback(`📝 ${label}`, `notedt:${item.id}:${page}`)];
+  });
+
+  const navRow = [];
+  if (page > 0) navRow.push(Markup.button.callback("⬅️ قبلی", `notepg:${page - 1}`));
+  navRow.push(Markup.button.callback(`${page + 1}/${totalPages}`, "notenoop"));
+  if (page < totalPages - 1) navRow.push(Markup.button.callback("بعدی ➡️", `notepg:${page + 1}`));
+  rows.push(navRow);
+
+  rows.push([Markup.button.callback("🔄 بروزرسانی لیست", `noterf:${page}`)]);
+  return Markup.inlineKeyboard(rows);
+}
+
 function buildBookDetailKeyboard({ contentId, page, canDownload }) {
   const rows = [];
   if (canDownload) {
@@ -913,6 +944,16 @@ function buildBookDetailKeyboard({ contentId, page, canDownload }) {
   }
   rows.push([Markup.button.callback("⬅️ بازگشت به لیست", `bookbk:${page}`)]);
   rows.push([Markup.button.callback("🔄 بروزرسانی لیست", `bookrf:${page}`)]);
+  return Markup.inlineKeyboard(rows);
+}
+
+function buildNoteDetailKeyboard({ contentId, page, canDownload }) {
+  const rows = [];
+  if (canDownload) {
+    rows.push([Markup.button.callback("⬇️ دانلود فایل", `notedl:${contentId}:${page}`)]);
+  }
+  rows.push([Markup.button.callback("⬅️ بازگشت به لیست", `notebk:${page}`)]);
+  rows.push([Markup.button.callback("🔄 بروزرسانی لیست", `noterf:${page}`)]);
   return Markup.inlineKeyboard(rows);
 }
 
@@ -934,11 +975,44 @@ function buildBookListMessage({ major, term, page, totalPages, totalItems, pageI
   );
 }
 
+function buildNoteListMessage({ major, term, page, totalPages, totalItems, pageItems }) {
+  const startIndex = page * NOTE_PANEL_PAGE_SIZE;
+  const listText = pageItems
+    .map((item, index) => {
+      const meta = extractBookMeta(item);
+      const professor = meta.professorName ? ` | استاد: ${meta.professorName}` : "";
+      return `${startIndex + index + 1}. ${item.title}${professor}`;
+    })
+    .join("\n");
+
+  return (
+    `جزوه های دانشگاه\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n` +
+    `نتیجه: ${totalItems} مورد | صفحه ${page + 1} از ${totalPages}\n\n` +
+    `${listText}\n\n` +
+    "روی هر مورد بزن تا جزئیات را ببینی و بعد فایل را دانلود کنی."
+  );
+}
+
 function buildBookDetailMessage(item) {
   const meta = extractBookMeta(item);
   const hasFile = Boolean(resolveItemDriveFileId(item));
   return [
     `📚 ${withFallback(item.title, "بدون عنوان")}`,
+    `شناسه: #${item.id}`,
+    `وضعیت: ${hasFile ? "تایید شده و آماده دانلود ✅" : "منتشر شده ولی فایل ندارد ⚠️"}`,
+    `رشته: ${withFallback(item.major, "عمومی")}`,
+    `ترم: ${withFallback(item.term, "عمومی")}`,
+    `درس مرتبط: ${withFallback(meta.courseName)}`,
+    `استاد مرتبط: ${withFallback(meta.professorName)}`,
+    `هدف: ${withFallback(meta.purpose)}`
+  ].join("\n");
+}
+
+function buildNoteDetailMessage(item) {
+  const meta = extractBookMeta(item);
+  const hasFile = Boolean(resolveItemDriveFileId(item));
+  return [
+    `📝 ${withFallback(item.title, "بدون عنوان")}`,
     `شناسه: #${item.id}`,
     `وضعیت: ${hasFile ? "تایید شده و آماده دانلود ✅" : "منتشر شده ولی فایل ندارد ⚠️"}`,
     `رشته: ${withFallback(item.major, "عمومی")}`,
@@ -959,6 +1033,17 @@ function buildBookDocumentCaption(item) {
   const meta = extractBookMeta(item);
   const lines = [
     `📚 ${trimCaptionLine(item.title, 80)}`,
+    `رشته: ${trimCaptionLine(item.major || "عمومی", 50)} | ترم: ${trimCaptionLine(item.term || "عمومی", 20)}`,
+    `درس: ${trimCaptionLine(meta.courseName || "ثبت نشده", 70)}`,
+    `استاد: ${trimCaptionLine(meta.professorName || "ثبت نشده", 70)}`
+  ];
+  return lines.join("\n").slice(0, 1024);
+}
+
+function buildNoteDocumentCaption(item) {
+  const meta = extractBookMeta(item);
+  const lines = [
+    `📝 ${trimCaptionLine(item.title, 80)}`,
     `رشته: ${trimCaptionLine(item.major || "عمومی", 50)} | ترم: ${trimCaptionLine(item.term || "عمومی", 20)}`,
     `درس: ${trimCaptionLine(meta.courseName || "ثبت نشده", 70)}`,
     `استاد: ${trimCaptionLine(meta.professorName || "ثبت نشده", 70)}`
@@ -1031,6 +1116,58 @@ async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_FETC
   return res.rows;
 }
 
+async function getUniversityNotesForPanel({ major, term, limit = NOTE_PANEL_FETCH_LIMIT }) {
+  const { effectiveMajor, effectiveTerm } = getEffectiveDataForFilter(major, term);
+  const res = await query(
+    `SELECT c.id, c.title, c.description, c.kind, c.major, c.term,
+            (
+              SELECT cf.drive_file_id
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_file_id,
+            (
+              SELECT cf.drive_link
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_link,
+            (
+              SELECT s.external_link
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = 'note'
+                AND s.title = c.title
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_external_link,
+            (
+              SELECT s.tags
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = 'note'
+                AND s.title = c.title
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_tags
+     FROM contents c
+     WHERE c.type = 'university'
+       AND c.kind = 'note'
+       AND c.is_published = TRUE
+       AND ($1::text IS NULL OR c.major = $1 OR c.major IS NULL)
+       AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
+     ORDER BY c.created_at DESC
+     LIMIT $3`,
+    [effectiveMajor || null, effectiveTerm || null, limit]
+  );
+
+  return res.rows;
+}
+
 async function getUniversityBookById({ contentId, major, term }) {
   const { effectiveMajor, effectiveTerm } = getEffectiveDataForFilter(major, term);
   const res = await query(
@@ -1073,6 +1210,58 @@ async function getUniversityBookById({ contentId, major, term }) {
      WHERE c.id = $1
        AND c.type = 'university'
        AND c.kind = 'book'
+       AND c.is_published = TRUE
+       AND ($2::text IS NULL OR c.major = $2 OR c.major IS NULL)
+       AND ($3::text IS NULL OR c.term = $3 OR c.term IS NULL)
+     LIMIT 1`,
+    [contentId, effectiveMajor || null, effectiveTerm || null]
+  );
+
+  return res.rows[0] || null;
+}
+
+async function getUniversityNoteById({ contentId, major, term }) {
+  const { effectiveMajor, effectiveTerm } = getEffectiveDataForFilter(major, term);
+  const res = await query(
+    `SELECT c.id, c.title, c.description, c.kind, c.major, c.term,
+            (
+              SELECT cf.drive_file_id
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_file_id,
+            (
+              SELECT cf.drive_link
+              FROM content_files cf
+              WHERE cf.content_id = c.id
+              ORDER BY cf.created_at DESC, cf.id DESC
+              LIMIT 1
+            ) AS drive_link,
+            (
+              SELECT s.external_link
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = 'note'
+                AND s.title = c.title
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_external_link,
+            (
+              SELECT s.tags
+              FROM community_content_submissions s
+              WHERE s.status = 'approved'
+                AND s.section = 'university'
+                AND s.content_kind = 'note'
+                AND s.title = c.title
+              ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
+              LIMIT 1
+            ) AS submission_tags
+     FROM contents c
+     WHERE c.id = $1
+       AND c.type = 'university'
+       AND c.kind = 'note'
        AND c.is_published = TRUE
        AND ($2::text IS NULL OR c.major = $2 OR c.major IS NULL)
        AND ($3::text IS NULL OR c.term = $3 OR c.term IS NULL)
@@ -1193,6 +1382,47 @@ async function sendUniversityBookById(ctx, contentId) {
   }
 }
 
+async function sendUniversityNoteById(ctx, contentId) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+  if (!major) {
+    await ctx.reply("برای دریافت فایل جزوه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const item = await getUniversityNoteById({ contentId, major, term });
+  if (!item) {
+    await ctx.reply("این جزوه برای پروفایل شما پیدا نشد یا منتشر نیست.", universityMenu());
+    return;
+  }
+
+  const driveFileId = resolveItemDriveFileId(item);
+  if (!driveFileId) {
+    await ctx.reply("فایل این جزوه هنوز ثبت نشده. لطفا به ادمین اطلاع بده.", universityMenu());
+    return;
+  }
+
+  try {
+    const localPath = await ensureBookCachedFile({ driveFileId });
+    const fileName = sanitizeNoteFileName(item.title);
+    await ctx.replyWithDocument(
+      {
+        source: localPath,
+        filename: fileName
+      },
+      {
+        caption: buildNoteDocumentCaption(item)
+      }
+    );
+  } catch (error) {
+    logError("Note send failed", {
+      error: error?.message || String(error),
+      contentId,
+      driveFileId
+    });
+    await ctx.reply("ارسال فایل جزوه انجام نشد. دوباره تلاش کن.", universityMenu());
+  }
+}
+
 async function showUniversityBooksPanel(ctx) {
   await showUniversityBooksPage(ctx, 0);
 }
@@ -1256,6 +1486,65 @@ async function showUniversityBookDetailPanel(ctx, contentId, page = 0) {
   await sendOrEditInlinePanel(ctx, buildBookDetailMessage(item), keyboard);
 }
 
+async function showUniversityNotesPage(ctx, requestedPage = 0) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("برای دریافت محتوای دقیق دانشگاه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const notes = await getUniversityNotesForPanel({ major, term, limit: NOTE_PANEL_FETCH_LIMIT });
+  const readyNotes = notes.filter((item) => Boolean(resolveItemDriveFileId(item)));
+
+  if (!readyNotes.length) {
+    await sendOrEditInlinePanel(
+      ctx,
+      `جزوه های دانشگاه\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}\n\nجزوه قابل دانلودی ثبت نشده.`,
+      Markup.inlineKeyboard([[Markup.button.callback("🔄 بروزرسانی", "noterf:0")]])
+    );
+    return;
+  }
+
+  const totalItems = readyNotes.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / NOTE_PANEL_PAGE_SIZE));
+  const safePage = clampInt(requestedPage, 0, totalPages - 1);
+  const start = safePage * NOTE_PANEL_PAGE_SIZE;
+  const pageItems = readyNotes.slice(start, start + NOTE_PANEL_PAGE_SIZE);
+
+  const message = buildNoteListMessage({
+    major,
+    term,
+    page: safePage,
+    totalPages,
+    totalItems,
+    pageItems
+  });
+  await sendOrEditInlinePanel(ctx, message, buildNotePanelKeyboard(pageItems, safePage, totalPages));
+}
+
+async function showUniversityNoteDetailPanel(ctx, contentId, page = 0) {
+  const { major, term } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("برای دریافت فایل جزوه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
+    return;
+  }
+
+  const item = await getUniversityNoteById({ contentId, major, term });
+  if (!item) {
+    await ctx.reply("این جزوه برای پروفایل شما پیدا نشد یا منتشر نیست.", universityMenu());
+    return;
+  }
+
+  const keyboard = buildNoteDetailKeyboard({
+    contentId: item.id,
+    page: Math.max(0, Number(page) || 0),
+    canDownload: Boolean(resolveItemDriveFileId(item))
+  });
+  await sendOrEditInlinePanel(ctx, buildNoteDetailMessage(item), keyboard);
+}
+
 async function showUniversityKind(ctx, kind, title, replyMenu = universityMenu()) {
   const { major, term } = await loadUserAcademicProfile(ctx);
 
@@ -1285,22 +1574,7 @@ async function showUniversityUploadedResourcesPanel(ctx) {
 }
 
 async function showUniversityUploadedNotesPanel(ctx) {
-  const { major, term } = await loadUserAcademicProfile(ctx);
-
-  if (!major) {
-    await ctx.reply("برای دریافت محتوای دقیق دانشگاه، ابتدا پروفایل تحصیلی خود را کامل کنید.", mainMenu());
-    return;
-  }
-
-  const items = await getUniversityItemsByKinds({
-    major,
-    term,
-    kinds: ["note"],
-    limit: 20
-  });
-
-  const header = `${UNI_ACCESS_KIND_NOTE}\nرشته: ${major}${term ? ` | ترم: ${term}` : ""}`;
-  await ctx.reply(`${header}\n\n${formatUniversityListWithKinds(items)}`, universityAccessPanelMenu());
+  await showUniversityNotesPage(ctx, 0);
 }
 
 async function showUniversityExamNotesPanel(ctx, replyMenu = universityMenu()) {
@@ -5966,6 +6240,87 @@ function registerHandlers(bot) {
     }
 
     await sendUniversityBookById(ctx, contentId);
+  });
+
+  bot.action(/^noterf:(\d+)$/, async (ctx) => {
+    const page = Number(ctx.match?.[1] || 0);
+    try {
+      await ctx.answerCbQuery("لیست به روز شد.");
+    } catch (_error) {
+      // ignore answer callback errors
+    }
+    await showUniversityNotesPage(ctx, page);
+  });
+
+  bot.action(/^notepg:(\d+)$/, async (ctx) => {
+    const page = Number(ctx.match?.[1] || 0);
+    try {
+      await ctx.answerCbQuery();
+    } catch (_error) {
+      // ignore answer callback errors
+    }
+    await showUniversityNotesPage(ctx, page);
+  });
+
+  bot.action(/^notebk:(\d+)$/, async (ctx) => {
+    const page = Number(ctx.match?.[1] || 0);
+    try {
+      await ctx.answerCbQuery();
+    } catch (_error) {
+      // ignore answer callback errors
+    }
+    await showUniversityNotesPage(ctx, page);
+  });
+
+  bot.action(/^notedt:(\d+):(\d+)$/, async (ctx) => {
+    const contentId = Number(ctx.match?.[1]);
+    const page = Number(ctx.match?.[2] || 0);
+
+    if (!contentId) {
+      try {
+        await ctx.answerCbQuery("شناسه جزوه نامعتبر است.");
+      } catch (_error) {
+        // ignore
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery("در حال نمایش جزئیات...");
+    } catch (_error) {
+      // ignore
+    }
+
+    await showUniversityNoteDetailPanel(ctx, contentId, page);
+  });
+
+  bot.action("notenoop", async (ctx) => {
+    try {
+      await ctx.answerCbQuery("صفحه فعلی");
+    } catch (_error) {
+      // ignore
+    }
+  });
+
+  bot.action(/^notedl:(\d+)(?::(\d+))?$/, async (ctx) => {
+    const contentId = Number(ctx.match?.[1]);
+
+    if (!contentId) {
+      try {
+        await ctx.answerCbQuery("شناسه جزوه نامعتبر است.");
+      } catch (_error) {
+        // ignore
+      }
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery("در حال آماده سازی فایل...");
+    } catch (_error) {
+      // ignore
+    }
+
+    await sendUniversityNoteById(ctx, contentId);
   });
 
   bot.on("document", async (ctx, next) => {
