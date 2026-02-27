@@ -2225,6 +2225,46 @@ router.post("/moderation/submissions/:submissionId/review", async (req, res, nex
     const submission = submissionRes.rows[0];
 
     if (action === "approve") {
+      if (submission.section === "university" && submission.content_kind === "course-definition") {
+        const parsedTerm = Number(submission.term);
+        const safeTerm =
+          Number.isInteger(parsedTerm) && parsedTerm >= 1 && parsedTerm <= 12 ? String(parsedTerm) : "1";
+        const courseCode = `UC-${submission.user_id}-${submission.id}`;
+
+        const courseUpsert = await query(
+          `INSERT INTO university_course_chart
+           (course_code, course_title, major, recommended_term, credits, prerequisites, is_core)
+           VALUES ($1, $2, $3, $4, 3, '[]'::jsonb, TRUE)
+           ON CONFLICT (course_code, major) DO UPDATE SET
+             course_title = EXCLUDED.course_title,
+             recommended_term = EXCLUDED.recommended_term,
+             updated_at = NOW()
+           RETURNING *`,
+          [courseCode, submission.title, submission.major || "عمومی", safeTerm]
+        );
+
+        const updated = await query(
+          `UPDATE community_content_submissions
+           SET status = 'approved',
+               moderation_reason = $1,
+               reviewed_at = NOW(),
+               reviewed_by = 'admin'
+           WHERE id = $2
+           RETURNING *`,
+          [reason, submissionId]
+        );
+
+        await createNotification({
+          type: "submission-approved",
+          title: "Course definition approved",
+          message: submission.title,
+          payload: { submissionId, courseCode }
+        });
+
+        const notify = await notifySubmissionDecision(submission, "approve", reason);
+        return res.json({ submission: updated.rows[0], course: courseUpsert.rows[0], notify });
+      }
+
       const driveMeta = extractDriveMetaFromTags(submission.tags);
       const resolvedDriveLink =
         submission.external_link ||

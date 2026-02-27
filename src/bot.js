@@ -1509,7 +1509,13 @@ async function handleCourseDefInput(ctx) {
 
   const text = String(ctx.message?.text || "").trim();
 
-  if (text === COURSE_DEF_BACK || text === UNI_PANEL_BACK || text === "لغو") {
+  if (
+    text === COURSE_DEF_BACK ||
+    text === "لغو تعریف درس" ||
+    text === UNI_PANEL_BACK ||
+    text === "بازگشت به دانشگاه" ||
+    text === "لغو"
+  ) {
     courseDefSessions.delete(key);
     await ctx.reply("تعریف درس لغو شد.", universityMenu());
     return true;
@@ -1548,30 +1554,25 @@ async function handleCourseDefInput(ctx) {
   }
 
   if (step.key === "confirm") {
-    if (text !== COURSE_DEF_DONE) {
+    if (text !== COURSE_DEF_DONE && text !== "ثبت درس") {
       await ctx.reply(`برای ثبت، دکمه «${COURSE_DEF_DONE}» را بزن.`);
       return true;
     }
     try {
-      const courseCode = `UC-${session.userId}-${Date.now()}`;
-      await query(
-        `INSERT INTO university_course_chart
-         (course_code, course_title, major, recommended_term, credits, prerequisites, is_core)
-         VALUES ($1, $2, $3, $4, 3, '[]'::jsonb, TRUE)
-         ON CONFLICT (course_code, major) DO UPDATE SET
-           course_title = EXCLUDED.course_title,
-           recommended_term = EXCLUDED.recommended_term,
-           updated_at = NOW()`,
-        [courseCode, session.answers.courseTitle, session.major, session.answers.targetTerm]
-      );
+      const saved = await saveCourseDefinitionSubmission(session);
       courseDefSessions.delete(key);
-      logInfo("Course defined", { userId: session.userId, courseTitle: session.answers.courseTitle, term: session.answers.targetTerm });
+      logInfo("Course definition submitted", {
+        submissionId: saved.id,
+        userId: session.userId,
+        courseTitle: session.answers.courseTitle,
+        term: session.answers.targetTerm
+      });
       await ctx.reply(
-        `✅ درس «${session.answers.courseTitle}» برای ترم ${session.answers.targetTerm} تعریف شد.\nاکنون می‌توانی از «بارگذاری محتوا» برای این درس فایل آپلود کنی.`,
+        `✅ درخواست تعریف درس ثبت شد و برای تایید ادمین ارسال شد.\nشناسه ارسال: #${saved.id}\nبعد از تایید، درس در لیست دانشگاه نمایش داده می‌شود.`,
         universityMenu()
       );
     } catch (error) {
-      logError("Course definition save failed", { error: error?.message || String(error), userId: session.userId });
+      logError("Course definition submission failed", { error: error?.message || String(error), userId: session.userId });
       courseDefSessions.delete(key);
       await ctx.reply("خطا در ثبت درس. دوباره تلاش کن.", universityMenu());
     }
@@ -1670,6 +1671,40 @@ function parseSubmissionStepValue(step, text) {
   }
 
   return { ok: true, value: raw };
+}
+
+async function saveCourseDefinitionSubmission(session) {
+  const description = [
+    "درخواست تعریف درس جدید",
+    `عنوان درس: ${session.answers.courseTitle}`,
+    `ترم پیشنهادی: ${session.answers.targetTerm}`
+  ].join("\n");
+
+  const inserted = await query(
+    `INSERT INTO community_content_submissions
+     (user_id, section, content_kind, title, description, major, term, tags, external_link, status)
+     VALUES ($1, 'university', 'course-definition', $2, $3, $4, $5, '[]'::jsonb, NULL, 'pending')
+     RETURNING *`,
+    [session.userId, session.answers.courseTitle, description, session.major, session.answers.targetTerm]
+  );
+
+  await query(
+    `INSERT INTO admin_notifications
+     (type, title, message, payload, status)
+     VALUES ('submission-pending', $1, $2, $3::jsonb, 'open')`,
+    [
+      "Course definition pending",
+      `${session.answers.courseTitle} requires moderation`,
+      JSON.stringify({
+        submissionId: inserted.rows[0].id,
+        userId: session.userId,
+        section: "university",
+        contentKind: "course-definition"
+      })
+    ]
+  );
+
+  return inserted.rows[0];
 }
 
 async function saveUniversitySubmission(session) {
@@ -1924,7 +1959,7 @@ async function handleSubmissionWizardInput(ctx) {
   if (!session) return false;
 
   const text = String(ctx.message?.text || "").trim();
-  if (text === UNIVERSITY_SUBMISSION_BACK || text === UNI_PANEL_BACK) {
+  if (text === UNIVERSITY_SUBMISSION_BACK || text === UNI_PANEL_BACK || text === "بازگشت به دانشگاه") {
     submissionSessions.delete(key);
     await ctx.reply("ارسال محتوا لغو شد.", universityMenu());
     return true;
@@ -6072,7 +6107,7 @@ function registerHandlers(bot) {
     await showUniversityUploadKindsPanel(ctx);
   });
 
-  bot.hears(UNI_PANEL_BACK, async (ctx) => {
+  bot.hears(/^(?:🔙\s*)?بازگشت به دانشگاه$/i, async (ctx) => {
     await ctx.reply("به منوی دانشگاه برگشتی.", universityMenu());
   });
 
