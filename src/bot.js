@@ -23,6 +23,7 @@ const {
 
 const profileSessions = new Map();
 const submissionSessions = new Map();
+const courseDefSessions = new Map();
 const pathSessions = new Map();
 const supportTicketSessions = new Map();
 const supportActionSessions = new Map();
@@ -217,10 +218,12 @@ const UNI_PANEL_BACK = "🔙 بازگشت به دانشگاه";
 const UNI_ACCESS_KIND_BOOK = "📚 کتاب های بارگذاری شده";
 const UNI_ACCESS_KIND_NOTE = "📝 جزوه های بارگذاری شده";
 const UNI_ACCESS_KIND_EXAM = "🎯 نکات و خلاصه های بارگذاری شده";
-const UNI_UPLOAD_KIND_COURSE = "📘 ارسال تعریف درس";
 const UNI_UPLOAD_KIND_NOTE = "📝 ارسال جزوه";
 const UNI_UPLOAD_KIND_BOOK = "📚 ارسال کتاب";
-const UNI_UPLOAD_KIND_EXAM = "🎯 ارسال نکته امتحانی";
+const UNI_UPLOAD_KIND_EXAM = "🎯 ارسال نکات امتحانی";
+const UNI_UPLOAD_KIND_SAMPLE = "🔎 ارسال نمونه سوال";
+const COURSE_DEF_BACK = "❌ لغو تعریف درس";
+const COURSE_DEF_DONE = "✅ ثبت درس";
 const UNI_MENU = [
   [UNI_MENU_COURSE_DEFINITION],
   [UNI_MENU_CONTENT_UPLOAD],
@@ -320,32 +323,20 @@ const PROFILE_STEPS = [
 const UNIVERSITY_SUBMISSION_BACK = "❌ لغو ارسال محتوا";
 const UNIVERSITY_SUBMISSION_DONE = "✅ ثبت نهایی ارسال";
 const UNIVERSITY_SUBMISSION_KINDS = [
-  { key: "course", label: UNI_MENU_COURSE_DEFINITION },
-  { key: "note", label: "📝 جزوه های دانشگاه" },
-  { key: "book", label: "📚 کتاب های دانشگاه" },
-  { key: "exam-tip", label: "🎯 نکات امتحان دانشگاه" }
+  { key: "note", label: UNI_UPLOAD_KIND_NOTE },
+  { key: "book", label: UNI_UPLOAD_KIND_BOOK },
+  { key: "exam-tip", label: UNI_UPLOAD_KIND_EXAM },
+  { key: "sample-question", label: UNI_UPLOAD_KIND_SAMPLE }
 ];
 
 const UNIVERSITY_SUBMISSION_STEPS = [
   {
     key: "contentKind",
-    question: "محتوای ارسالی مناسب کدام بخش دانشگاه است؟"
+    question: "محتوای ارسالی از چه نوع است؟"
   },
   {
-    key: "courseName",
-    question: "این محتوا برای کدام درس است؟ (مثلا: ساختمان داده)"
-  },
-  {
-    key: "targetTerm",
-    question: "این محتوا برای کدام ترم است؟ (عدد 1 تا 12)"
-  },
-  {
-    key: "title",
-    question: "عنوان محتوا را بنویس:"
-  },
-  {
-    key: "purpose",
-    question: "این محتوا برای چه کاری مفید است؟ (مثلا جمع بندی قبل امتحان)"
+    key: "selectCourse",
+    question: "این محتوا برای کدام درس است؟ از لیست انتخاب کن یا نام درس را بنویس:"
   },
   {
     key: "fileUpload",
@@ -397,8 +388,8 @@ function universityAccessPanelMenu() {
 
 function universityUploadPanelMenu() {
   return Markup.keyboard([
-    [UNI_UPLOAD_KIND_COURSE, UNI_UPLOAD_KIND_NOTE],
-    [UNI_UPLOAD_KIND_BOOK, UNI_UPLOAD_KIND_EXAM],
+    [UNI_UPLOAD_KIND_NOTE, UNI_UPLOAD_KIND_BOOK],
+    [UNI_UPLOAD_KIND_EXAM, UNI_UPLOAD_KIND_SAMPLE],
     [UNI_PANEL_BACK]
   ]).resize();
 }
@@ -1377,11 +1368,13 @@ function getSubmissionKindByKeyword(label) {
     .replace(/ك/g, "ک")
     .toLowerCase();
 
-  if (normalized.includes("درس")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "course") || null;
   if (normalized.includes("جزوه")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "note") || null;
   if (normalized.includes("کتاب")) return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "book") || null;
   if (normalized.includes("نکات") || normalized.includes("امتحان")) {
     return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "exam-tip") || null;
+  }
+  if (normalized.includes("نمونه") || normalized.includes("سوال")) {
+    return UNIVERSITY_SUBMISSION_KINDS.find((item) => item.key === "sample-question") || null;
   }
 
   return null;
@@ -1414,14 +1407,44 @@ async function askSubmissionStep(ctx, session) {
     return;
   }
 
+  if (step.key === "selectCourse") {
+    try {
+      const coursesRes = await query(
+        `SELECT course_title, recommended_term
+         FROM university_course_chart
+         WHERE ($1::text IS NULL OR major = $1)
+         ORDER BY recommended_term::integer ASC, course_title ASC
+         LIMIT 24`,
+        [session.context?.major || null]
+      );
+      const courseOptions = coursesRes.rows.map(
+        (r) => `${r.course_title} (ت${r.recommended_term})`
+      );
+      if (courseOptions.length > 0) {
+        await ctx.reply(
+          step.question,
+          Markup.keyboard([
+            ...chunkOptions(courseOptions, 2),
+            [UNIVERSITY_SUBMISSION_BACK]
+          ]).resize()
+        );
+      } else {
+        await ctx.reply(
+          "هنوز درسی تعریف نشده.\nنام درس را دستی بنویس:",
+          Markup.keyboard([[UNIVERSITY_SUBMISSION_BACK]]).resize()
+        );
+      }
+    } catch {
+      await ctx.reply(step.question, Markup.keyboard([[UNIVERSITY_SUBMISSION_BACK]]).resize());
+    }
+    return;
+  }
+
   if (step.key === "confirm") {
     await ctx.reply(
       `${step.question}\n\n` +
       `نوع: ${session.answers.contentKindLabel}\n` +
-      `درس مرتبط: ${session.answers.courseName || "ثبت نشده"}\n` +
-      `ترم هدف: ${session.answers.targetTerm || "-"}\n` +
-      `عنوان: ${session.answers.title}\n` +
-      `هدف: ${session.answers.purpose}\n` +
+      `درس: ${session.answers.courseName || "ثبت نشده"}\n` +
       `فایل: ${session.answers.fileName || "ثبت نشده"}`,
       Markup.keyboard([[UNIVERSITY_SUBMISSION_DONE], [UNIVERSITY_SUBMISSION_BACK]]).resize()
     );
@@ -1440,6 +1463,125 @@ async function askSubmissionStep(ctx, session) {
 
   await ctx.reply(step.question, Markup.keyboard([[UNIVERSITY_SUBMISSION_BACK]]).resize());
 }
+
+// ─── Course Definition Wizard (title + term only) ───────────────────────────
+
+const COURSE_DEF_STEPS = [
+  { key: "courseTitle", question: "عنوان درس را بنویس (مثلاً: ساختمان داده):" },
+  { key: "targetTerm", question: "این درس برای کدام ترم است؟ (عدد 1 تا 12)" },
+  { key: "confirm", question: "تعریف درس را تایید کن." }
+];
+
+async function askCourseDefStep(ctx, session) {
+  const step = COURSE_DEF_STEPS[session.stepIndex];
+  if (!step) return;
+
+  if (step.key === "confirm") {
+    await ctx.reply(
+      `تایید تعریف درس:\n\n📘 عنوان درس: ${session.answers.courseTitle}\n📅 ترم: ${session.answers.targetTerm}\n\nدکمه «${COURSE_DEF_DONE}» را بزن.`,
+      Markup.keyboard([[COURSE_DEF_DONE], [COURSE_DEF_BACK]]).resize()
+    );
+    return;
+  }
+
+  await ctx.reply(step.question, Markup.keyboard([[COURSE_DEF_BACK]]).resize());
+}
+
+async function startCourseDefinitionWizard(ctx) {
+  const userId = await ensureUser(ctx);
+  const key = getSessionKey(ctx);
+  const { major } = await loadUserAcademicProfile(ctx);
+
+  if (!major) {
+    await ctx.reply("ابتدا پروفایل تحصیلی را کامل کن تا بتوانی درس تعریف کنی.", mainMenuForContext(ctx));
+    return;
+  }
+
+  courseDefSessions.set(key, { userId, major, stepIndex: 0, answers: {} });
+  await ctx.reply("فرم تعریف درس شروع شد.\nهر زمان خواستی «لغو تعریف درس» را بزن.");
+  await askCourseDefStep(ctx, courseDefSessions.get(key));
+}
+
+async function handleCourseDefInput(ctx) {
+  const key = getSessionKey(ctx);
+  const session = courseDefSessions.get(key);
+  if (!session) return false;
+
+  const text = String(ctx.message?.text || "").trim();
+
+  if (text === COURSE_DEF_BACK || text === UNI_PANEL_BACK || text === "لغو") {
+    courseDefSessions.delete(key);
+    await ctx.reply("تعریف درس لغو شد.", universityMenu());
+    return true;
+  }
+
+  const step = COURSE_DEF_STEPS[session.stepIndex];
+  if (!step) {
+    courseDefSessions.delete(key);
+    await ctx.reply("نشست نامعتبر بود. دوباره از منو انتخاب کن.", universityMenu());
+    return true;
+  }
+
+  if (step.key === "courseTitle") {
+    if (text.length < 2) {
+      await ctx.reply("عنوان درس باید حداقل 2 کاراکتر باشد.");
+      return true;
+    }
+    session.answers.courseTitle = text;
+    session.stepIndex += 1;
+    courseDefSessions.set(key, session);
+    await askCourseDefStep(ctx, session);
+    return true;
+  }
+
+  if (step.key === "targetTerm") {
+    const parsed = Number(text);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 12) {
+      await ctx.reply("ترم باید عدد بین 1 تا 12 باشد.");
+      return true;
+    }
+    session.answers.targetTerm = String(parsed);
+    session.stepIndex += 1;
+    courseDefSessions.set(key, session);
+    await askCourseDefStep(ctx, session);
+    return true;
+  }
+
+  if (step.key === "confirm") {
+    if (text !== COURSE_DEF_DONE) {
+      await ctx.reply(`برای ثبت، دکمه «${COURSE_DEF_DONE}» را بزن.`);
+      return true;
+    }
+    try {
+      const courseCode = `UC-${session.userId}-${Date.now()}`;
+      await query(
+        `INSERT INTO university_course_chart
+         (course_code, course_title, major, recommended_term, credits, prerequisites, is_core)
+         VALUES ($1, $2, $3, $4, 3, '[]'::jsonb, TRUE)
+         ON CONFLICT (course_code, major) DO UPDATE SET
+           course_title = EXCLUDED.course_title,
+           recommended_term = EXCLUDED.recommended_term,
+           updated_at = NOW()`,
+        [courseCode, session.answers.courseTitle, session.major, session.answers.targetTerm]
+      );
+      courseDefSessions.delete(key);
+      logInfo("Course defined", { userId: session.userId, courseTitle: session.answers.courseTitle, term: session.answers.targetTerm });
+      await ctx.reply(
+        `✅ درس «${session.answers.courseTitle}» برای ترم ${session.answers.targetTerm} تعریف شد.\nاکنون می‌توانی از «بارگذاری محتوا» برای این درس فایل آپلود کنی.`,
+        universityMenu()
+      );
+    } catch (error) {
+      logError("Course definition save failed", { error: error?.message || String(error), userId: session.userId });
+      courseDefSessions.delete(key);
+      await ctx.reply("خطا در ثبت درس. دوباره تلاش کن.", universityMenu());
+    }
+    return true;
+  }
+
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function startUniversitySubmissionWizard(ctx, presetKindKey = null) {
   const userId = await ensureUser(ctx);
@@ -1503,22 +1645,11 @@ function parseSubmissionStepValue(step, text) {
     return { ok: true, value: { contentKind: kind.key, contentKindLabel: kind.label } };
   }
 
-  if (step.key === "courseName") {
-    if (raw.length < 2) return { ok: false, message: "نام درس معتبر وارد کن." };
-    return { ok: true, value: raw };
-  }
-
-  if (step.key === "targetTerm") {
-    const parsed = Number(raw);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 12) {
-      return { ok: false, message: "ترم باید عدد بین 1 تا 12 باشد." };
-    }
-    return { ok: true, value: String(parsed) };
-  }
-
-  if (step.key === "title") {
-    if (raw.length < 6) return { ok: false, message: "عنوان باید حداقل 6 کاراکتر باشد." };
-    return { ok: true, value: raw };
+  if (step.key === "selectCourse") {
+    // Strip the term suffix added by the keyboard (e.g. "ساختمان داده (ت3)" → "ساختمان داده")
+    const cleaned = raw.replace(/\s*\(ت\d+\)$/, "").trim();
+    if (cleaned.length < 2) return { ok: false, message: "نام درس معتبر وارد کن." };
+    return { ok: true, value: cleaned };
   }
 
   if (step.key === "fileUpload") {
@@ -1543,23 +1674,18 @@ function parseSubmissionStepValue(step, text) {
 
 async function saveUniversitySubmission(session) {
   const profileRes = await query(
-    `SELECT major
+    `SELECT major, term
      FROM user_profiles
      WHERE user_id = $1
      LIMIT 1`,
     [session.userId]
   );
   const major = profileRes.rows[0]?.major || null;
-  const term = String(session.answers.targetTerm || "").trim() || null;
-  if (!term) {
-    throw new Error("Target term is required for submission");
-  }
+  const term = profileRes.rows[0]?.term || null;
 
   const composedDescription = [
-    `بخش مقصد: ${session.answers.contentKindLabel}`,
-    `درس مرتبط: ${session.answers.courseName || "ثبت نشده"}`,
-    `ترم هدف: ${term || "-"}`,
-    `هدف: ${session.answers.purpose}`
+    `نوع محتوا: ${session.answers.contentKindLabel}`,
+    `درس مرتبط: ${session.answers.courseName || "ثبت نشده"}`
   ].join("\n\n");
 
   const inserted = await query(
@@ -1570,7 +1696,7 @@ async function saveUniversitySubmission(session) {
     [
       session.userId,
       session.answers.contentKind,
-      session.answers.title,
+      session.answers.courseName || session.answers.contentKindLabel,
       composedDescription,
       major,
       term,
@@ -1589,7 +1715,7 @@ async function saveUniversitySubmission(session) {
      VALUES ('submission-pending', $1, $2, $3::jsonb, 'open')`,
     [
       "University submission pending",
-      `${session.answers.title} requires moderation`,
+      `${session.answers.courseName || session.answers.contentKind} requires moderation`,
       JSON.stringify({
         submissionId: inserted.rows[0].id,
         userId: session.userId,
@@ -1798,7 +1924,7 @@ async function handleSubmissionWizardInput(ctx) {
   if (!session) return false;
 
   const text = String(ctx.message?.text || "").trim();
-  if (text === UNIVERSITY_SUBMISSION_BACK) {
+  if (text === UNIVERSITY_SUBMISSION_BACK || text === UNI_PANEL_BACK) {
     submissionSessions.delete(key);
     await ctx.reply("ارسال محتوا لغو شد.", universityMenu());
     return true;
@@ -1826,6 +1952,8 @@ async function handleSubmissionWizardInput(ctx) {
   if (step.key === "contentKind") {
     session.answers.contentKind = parsed.value.contentKind;
     session.answers.contentKindLabel = parsed.value.contentKindLabel;
+  } else if (step.key === "selectCourse") {
+    session.answers.courseName = parsed.value;
   } else if (step.key === "confirm") {
     if (!session.answers.driveLink) {
       await ctx.reply("قبل از ثبت نهایی، فایل را آپلود کن.");
@@ -5179,10 +5307,15 @@ const menuLabelAliases = new Map([
   [UNI_ACCESS_KIND_BOOK, "کتاب های بارگذاری شده"],
   [UNI_ACCESS_KIND_NOTE, "جزوه های بارگذاری شده"],
   [UNI_ACCESS_KIND_EXAM, "نکات و خلاصه های بارگذاری شده"],
-  [UNI_UPLOAD_KIND_COURSE, "ارسال تعریف درس"],
   [UNI_UPLOAD_KIND_NOTE, "ارسال جزوه"],
   [UNI_UPLOAD_KIND_BOOK, "ارسال کتاب"],
-  [UNI_UPLOAD_KIND_EXAM, "ارسال نکته امتحانی"],
+  [UNI_UPLOAD_KIND_EXAM, "ارسال نکات امتحانی"],
+  [UNI_UPLOAD_KIND_SAMPLE, "ارسال نمونه سوال"],
+  [COURSE_DEF_BACK, "لغو تعریف درس"],
+  [COURSE_DEF_DONE, "ثبت درس"],
+  // backward compat for previously cached keyboard labels
+  ["ارسال تعریف درس", "تعریف دروس دانشگاه"],
+  ["ارسال نکته امتحانی", "ارسال نکات امتحانی"],
   ["نکات و خلاصه‌های امتحانی", "دسترسی به منابع بارگزاری شده"],
   ["نکات و خلاصه‌های بارگذاری شده", "نکات و خلاصه های بارگذاری شده"],
   ["📘 دروس دانشگاه", "دروس دانشگاه"],
@@ -5389,10 +5522,12 @@ async function handleProfileWizardInput(ctx) {
     "کتاب های بارگذاری شده",
     "جزوه های بارگذاری شده",
     "نکات و خلاصه های بارگذاری شده",
-    "ارسال تعریف درس",
     "ارسال جزوه",
     "ارسال کتاب",
-    "ارسال نکته امتحانی",
+    "ارسال نکات امتحانی",
+    "ارسال نمونه سوال",
+    "لغو تعریف درس",
+    "ثبت درس",
     "دروس دانشگاه",
     "جزوه های دانشگاه",
     "کتاب های دانشگاه",
@@ -5811,6 +5946,9 @@ function registerHandlers(bot) {
     const handledSupport = await handleSupportTicketInput(ctx);
     if (handledSupport) return;
 
+    const handledCourseDef = await handleCourseDefInput(ctx);
+    if (handledCourseDef) return;
+
     const handledSubmission = await handleSubmissionWizardInput(ctx);
     if (handledSubmission) return;
 
@@ -5867,7 +6005,7 @@ function registerHandlers(bot) {
   });
 
   bot.hears("تعریف دروس دانشگاه", async (ctx) => {
-    await showUniversityKind(ctx, "course", UNI_MENU_COURSE_DEFINITION);
+    await startCourseDefinitionWizard(ctx);
   });
 
   bot.hears("دروس دانشگاه", async (ctx) => {
@@ -5914,10 +6052,6 @@ function registerHandlers(bot) {
     await showUniversityUploadKindsPanel(ctx);
   });
 
-  bot.hears("ارسال تعریف درس", async (ctx) => {
-    await startUniversitySubmissionWizard(ctx, "course");
-  });
-
   bot.hears("ارسال جزوه", async (ctx) => {
     await startUniversitySubmissionWizard(ctx, "note");
   });
@@ -5926,8 +6060,12 @@ function registerHandlers(bot) {
     await startUniversitySubmissionWizard(ctx, "book");
   });
 
-  bot.hears("ارسال نکته امتحانی", async (ctx) => {
+  bot.hears("ارسال نکات امتحانی", async (ctx) => {
     await startUniversitySubmissionWizard(ctx, "exam-tip");
+  });
+
+  bot.hears("ارسال نمونه سوال", async (ctx) => {
+    await startUniversitySubmissionWizard(ctx, "sample-question");
   });
 
   bot.hears("ارسال محتوای دانشگاه", async (ctx) => {
