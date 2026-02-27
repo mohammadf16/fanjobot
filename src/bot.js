@@ -1715,7 +1715,12 @@ async function handleProfileWizardMediaInput(ctx) {
       userId: session.userId,
       fileName: media.fileName
     });
-    await ctx.reply("آپلود رزومه انجام نشد. دوباره فایل را ارسال کن یا لینک رزومه بفرست.");
+    const uploadErrorMessage = buildDriveUploadErrorMessage(error);
+    await ctx.reply(
+      uploadErrorMessage === "آپلود فایل انجام نشد. دوباره فایل را ارسال کن."
+        ? "آپلود رزومه انجام نشد. دوباره فایل را ارسال کن یا لینک رزومه بفرست."
+        : uploadErrorMessage
+    );
     return true;
   }
 }
@@ -1782,7 +1787,7 @@ async function handleSubmissionWizardMediaInput(ctx) {
       userId: session.userId,
       fileName: media.fileName
     });
-    await ctx.reply("آپلود فایل انجام نشد. دوباره فایل را ارسال کن.");
+    await ctx.reply(buildDriveUploadErrorMessage(error));
     return true;
   }
 }
@@ -2421,6 +2426,19 @@ function isMembershipStatusAllowed(status) {
   return ["creator", "administrator", "member", "restricted"].includes(String(status || "").toLowerCase());
 }
 
+function isMembershipCheckUnavailableError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("member list is inaccessible");
+}
+
+function buildDriveUploadErrorMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (message.includes("invalid_grant")) {
+    return "آپلود فایل موقتا در دسترس نیست (تنظیمات Google Drive). لطفا چند دقیقه بعد دوباره امتحان کن.";
+  }
+  return "آپلود فایل انجام نشد. دوباره فایل را ارسال کن.";
+}
+
 function shouldSendMembershipPrompt(userId, force = false) {
   if (force) return true;
   if (!userId) return true;
@@ -2468,6 +2486,14 @@ async function ensureMembershipGatePass(ctx, { forceRefreshSettings = false, for
     const member = await ctx.telegram.getChatMember(settings.channelUsername, userId);
     if (isMembershipStatusAllowed(member?.status)) return true;
   } catch (error) {
+    if (isMembershipCheckUnavailableError(error)) {
+      logError("Membership gate check skipped (Telegram API unavailable)", {
+        error: error?.message || String(error),
+        userId,
+        channel: settings.channelUsername
+      });
+      return true;
+    }
     logError("Membership gate check failed", {
       error: error?.message || String(error),
       userId,

@@ -7,6 +7,13 @@ const { config } = require("../config");
 
 const scope = ["https://www.googleapis.com/auth/drive"];
 
+function hasServiceAccountCredentials() {
+  return Boolean(
+    String(config.googleServiceAccountJsonPath || "").trim() ||
+      String(config.googleServiceAccountJsonBase64 || "").trim()
+  );
+}
+
 function hasOauthCredentials() {
   return Boolean(
     config.googleOauthClientId &&
@@ -40,6 +47,19 @@ function createOauthClient() {
     refresh_token: config.googleOauthRefreshToken
   });
   return auth;
+}
+
+function isInvalidGrantError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  const oauthError = String(error?.response?.data?.error || "").toLowerCase();
+  return message.includes("invalid_grant") || oauthError === "invalid_grant";
+}
+
+function withDriveAuthErrorContext(error) {
+  if (!isInvalidGrantError(error)) return error;
+  return new Error(
+    "Google Drive auth failed (invalid_grant). Refresh token is revoked/expired or OAuth client changed. Update GOOGLE_OAUTH_REFRESH_TOKEN or remove OAuth vars to use service account credentials."
+  );
 }
 
 function parseServiceAccount() {
@@ -109,7 +129,19 @@ async function getDriveClient() {
 
       if (hasOauthCredentials()) {
         const oauthClient = createOauthClient();
-        return google.drive({ version: "v3", auth: oauthClient });
+        try {
+          // Force early token refresh so invalid_grant is detected and handled upfront.
+          await oauthClient.getAccessToken();
+          return google.drive({ version: "v3", auth: oauthClient });
+        } catch (error) {
+          if (isInvalidGrantError(error) && hasServiceAccountCredentials()) {
+            const credentials = parseServiceAccount();
+            const auth = new google.auth.GoogleAuth({ credentials, scopes: scope });
+            const client = await auth.getClient();
+            return google.drive({ version: "v3", auth: client });
+          }
+          throw withDriveAuthErrorContext(error);
+        }
       }
 
       const credentials = parseServiceAccount();
@@ -118,7 +150,7 @@ async function getDriveClient() {
       return google.drive({ version: "v3", auth: client });
     })().catch((error) => {
       driveClientPromise = null;
-      throw error;
+      throw withDriveAuthErrorContext(error);
     });
   }
 
@@ -196,7 +228,7 @@ async function ensureParentFolderAccessible(drive, folderId) {
         `Drive folder not found or inaccessible: ${folderId}. Authenticated account: ${authenticatedAccount}. Share folder with this account and verify folder id.`
       );
     }
-    throw error;
+    throw withDriveAuthErrorContext(error);
   }
 }
 
