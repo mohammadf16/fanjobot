@@ -48,7 +48,13 @@ function toOffset(value) {
   return Math.floor(parsed);
 }
 
-function parseList(value) {
+function getEffectiveDataForFilter(major, term) {
+  const isMajorIndustrialEngineering = String(major || "").toLowerCase().includes("صنایع");
+  return {
+    effectiveMajor: major,
+    effectiveTerm: isMajorIndustrialEngineering ? null : term
+  };
+}function parseList(value) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item || "").trim()).filter(Boolean);
   }
@@ -456,6 +462,7 @@ router.get("/university/my/:userId", async (req, res, next) => {
     }
     const major = profile.major || null;
     const term = profile.term || null;
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
 
     const rows = await query(
       `SELECT c.id, c.title, c.description, c.kind, c.major, c.term, c.tags, c.created_at,
@@ -474,7 +481,7 @@ router.get("/university/my/:userId", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $3`,
-      [major, term, toLimit(req.query.limit, 80, 200)]
+      [major, effectiveTerm, toLimit(req.query.limit, 80, 200)]
     );
 
     const safeItems = rows.rows.map(toSafeUniversityItem);

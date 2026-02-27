@@ -11,7 +11,21 @@ function toLimit(raw, fallback = DEFAULT_LIMIT, max = 100) {
   return Math.min(max, Math.floor(parsed));
 }
 
+function getEffectiveTermForFilter(major) {
+  const isMajorIndustrialEngineering = String(major || "").toLowerCase().includes("صنایع");
+  return isMajorIndustrialEngineering ? null : major ? null : null;
+}
+
+function getEffectiveDataForFilter(major, term) {
+  const isMajorIndustrialEngineering = String(major || "").toLowerCase().includes("صنایع");
+  return {
+    effectiveMajor: major,
+    effectiveTerm: isMajorIndustrialEngineering ? null : term
+  };
+}
+
 async function loadUniversityItems({ major, term, limit = 100 }) {
+  const { effectiveTerm } = getEffectiveDataForFilter(major, term);
   const result = await query(
     `SELECT c.*, cf.drive_file_id, cf.drive_link, cf.mime_type
      FROM contents c
@@ -22,7 +36,7 @@ async function loadUniversityItems({ major, term, limit = 100 }) {
        AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
      ORDER BY c.created_at DESC
      LIMIT $3`,
-    [major || null, term || null, toLimit(limit, 100, 200)]
+    [major || null, effectiveTerm || null, toLimit(limit, 100, 200)]
   );
 
   return result.rows;
@@ -161,6 +175,7 @@ router.get("/notes", async (req, res, next) => {
     const major = req.query.major;
     const term = req.query.term;
     const limit = toLimit(req.query.limit);
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
 
     const result = await query(
       `SELECT c.*, cf.drive_file_id, cf.drive_link, cf.mime_type
@@ -173,7 +188,7 @@ router.get("/notes", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $3`,
-      [major || null, term || null, limit]
+      [major || null, effectiveTerm || null, limit]
     );
 
     res.json({ items: result.rows });
@@ -187,6 +202,7 @@ router.get("/books", async (req, res, next) => {
     const major = req.query.major;
     const term = req.query.term;
     const limit = toLimit(req.query.limit);
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
 
     const result = await query(
       `SELECT c.*, cf.drive_file_id, cf.drive_link, cf.mime_type
@@ -199,7 +215,7 @@ router.get("/books", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $3`,
-      [major || null, term || null, limit]
+      [major || null, effectiveTerm || null, limit]
     );
 
     res.json({ items: result.rows });
@@ -213,6 +229,7 @@ router.get("/resources", async (req, res, next) => {
     const major = req.query.major;
     const term = req.query.term;
     const limit = toLimit(req.query.limit);
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
 
     const result = await query(
       `SELECT c.*, cf.drive_file_id, cf.drive_link, cf.mime_type
@@ -225,7 +242,7 @@ router.get("/resources", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $3`,
-      [major || null, term || null, limit]
+      [major || null, effectiveTerm || null, limit]
     );
 
     res.json({ items: result.rows });
@@ -239,6 +256,7 @@ router.get("/videos", async (req, res, next) => {
     const major = req.query.major;
     const term = req.query.term;
     const limit = toLimit(req.query.limit);
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
 
     const result = await query(
       `SELECT c.*, cf.drive_file_id, cf.drive_link, cf.mime_type
@@ -251,7 +269,7 @@ router.get("/videos", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $3`,
-      [major || null, term || null, limit]
+      [major || null, effectiveTerm || null, limit]
     );
 
     res.json({ items: result.rows });
@@ -265,6 +283,7 @@ router.get("/sample-questions", async (req, res, next) => {
     const major = req.query.major;
     const term = req.query.term;
     const limit = toLimit(req.query.limit);
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
 
     const result = await query(
       `SELECT c.*, cf.drive_file_id, cf.drive_link, cf.mime_type
@@ -277,7 +296,7 @@ router.get("/sample-questions", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $3`,
-      [major || null, term || null, limit]
+      [major || null, effectiveTerm || null, limit]
     );
 
     res.json({ items: result.rows });
@@ -291,6 +310,7 @@ router.get("/summaries", async (req, res, next) => {
     const major = req.query.major;
     const term = req.query.term;
     const limit = toLimit(req.query.limit);
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
 
     const result = await query(
       `SELECT c.*, cf.drive_file_id, cf.drive_link, cf.mime_type
@@ -303,7 +323,7 @@ router.get("/summaries", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $3`,
-      [major || null, term || null, limit]
+      [major || null, effectiveTerm || null, limit]
     );
 
     res.json({ items: result.rows });
@@ -317,6 +337,7 @@ router.get("/exam-tips", async (req, res, next) => {
     const major = req.query.major;
     const term = req.query.term;
     const limit = toLimit(req.query.limit);
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
 
     const result = await query(
       `SELECT c.*, cf.drive_file_id, cf.drive_link, cf.mime_type
@@ -329,7 +350,7 @@ router.get("/exam-tips", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT $3`,
-      [major || null, term || null, limit]
+      [major || null, effectiveTerm || null, limit]
     );
 
     res.json({ items: result.rows });

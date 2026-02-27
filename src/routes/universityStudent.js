@@ -31,6 +31,14 @@ function toOffset(raw) {
   return Math.floor(parsed);
 }
 
+function getEffectiveDataForFilter(major, term) {
+  const isMajorIndustrialEngineering = String(major || "").toLowerCase().includes("صنایع");
+  return {
+    effectiveMajor: major,
+    effectiveTerm: isMajorIndustrialEngineering ? null : term
+  };
+}
+
 function normalizeTags(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
@@ -631,6 +639,7 @@ router.get("/resources", async (req, res, next) => {
     const profile = userId ? await getUserProfile(userId) : null;
     const major = req.query.major || profile?.major || null;
     const term = req.query.term || profile?.term || null;
+    const { effectiveTerm } = getEffectiveDataForFilter(major, term);
     const skillLevel = req.query.level || profile?.skill_level || null;
     const q = String(req.query.q || "").trim().toLowerCase();
     const kind = req.query.kind ? String(req.query.kind).trim() : "";
@@ -650,7 +659,7 @@ router.get("/resources", async (req, res, next) => {
          AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
        ORDER BY c.created_at DESC
        LIMIT 400`,
-      [major, term]
+      [major, effectiveTerm]
     );
 
     let filtered = resources.rows.filter((item) => {

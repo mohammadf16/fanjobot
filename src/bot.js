@@ -716,6 +716,19 @@ function getSessionKey(ctx) {
   return String(ctx.from.id);
 }
 
+function getEffectiveTermForFilter(major) {
+  const isMajorIndustrialEngineering = String(major || "").toLowerCase().includes("صنایع");
+  return isMajorIndustrialEngineering ? null : major ? null : null;
+}
+
+function getEffectiveDataForFilter(major, term) {
+  const isMajorIndustrialEngineering = String(major || "").toLowerCase().includes("صنایع");
+  return {
+    effectiveMajor: major,
+    effectiveTerm: isMajorIndustrialEngineering ? null : term
+  };
+}
+
 async function loadUserAcademicProfile(ctx) {
   const userId = await ensureUser(ctx);
   const profileRes = await query(
@@ -738,6 +751,7 @@ async function loadUserAcademicProfile(ctx) {
 }
 
 async function getUniversityItemsByKind({ major, term, kind, limit = 5 }) {
+  const { effectiveTerm } = getEffectiveDataForFilter(major, term);
   const res = await query(
     `SELECT c.id, c.title
      FROM contents c
@@ -748,7 +762,7 @@ async function getUniversityItemsByKind({ major, term, kind, limit = 5 }) {
        AND ($3::text IS NULL OR term = $3 OR term IS NULL)
      ORDER BY created_at DESC
      LIMIT $4`,
-    [kind, major || null, term || null, limit]
+    [kind, major || null, effectiveTerm || null, limit]
   );
 
   return res.rows;
@@ -764,6 +778,7 @@ const UNIVERSITY_KIND_TITLES = {
 };
 
 async function getUniversityItemsByKinds({ major, term, kinds = [], limit = 20 }) {
+  const { effectiveTerm } = getEffectiveDataForFilter(major, term);
   const safeKinds = Array.isArray(kinds)
     ? kinds.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
@@ -780,7 +795,7 @@ async function getUniversityItemsByKinds({ major, term, kinds = [], limit = 20 }
        AND ($3::text IS NULL OR term = $3 OR term IS NULL)
      ORDER BY created_at DESC
      LIMIT $4`,
-    [safeKinds, major || null, term || null, limit]
+    [safeKinds, major || null, effectiveTerm || null, limit]
   );
 
   return res.rows;
@@ -965,6 +980,7 @@ async function sendOrEditInlinePanel(ctx, text, keyboard) {
 }
 
 async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_FETCH_LIMIT }) {
+  const { effectiveMajor, effectiveTerm } = getEffectiveDataForFilter(major, term);
   const res = await query(
     `SELECT c.id, c.title, c.description, c.kind, c.major, c.term,
             (
@@ -988,7 +1004,6 @@ async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_FETC
                 AND s.section = 'university'
                 AND s.content_kind = 'book'
                 AND s.title = c.title
-                AND s.user_id = c.created_by_user_id
               ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
               LIMIT 1
             ) AS submission_external_link,
@@ -999,7 +1014,6 @@ async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_FETC
                 AND s.section = 'university'
                 AND s.content_kind = 'book'
                 AND s.title = c.title
-                AND s.user_id = c.created_by_user_id
               ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
               LIMIT 1
             ) AS submission_tags
@@ -1011,13 +1025,14 @@ async function getUniversityBooksForPanel({ major, term, limit = BOOK_PANEL_FETC
        AND ($2::text IS NULL OR c.term = $2 OR c.term IS NULL)
      ORDER BY c.created_at DESC
      LIMIT $3`,
-    [major || null, term || null, limit]
+    [effectiveMajor || null, effectiveTerm || null, limit]
   );
 
   return res.rows;
 }
 
 async function getUniversityBookById({ contentId, major, term }) {
+  const { effectiveMajor, effectiveTerm } = getEffectiveDataForFilter(major, term);
   const res = await query(
     `SELECT c.id, c.title, c.description, c.kind, c.major, c.term,
             (
@@ -1041,7 +1056,6 @@ async function getUniversityBookById({ contentId, major, term }) {
                 AND s.section = 'university'
                 AND s.content_kind = 'book'
                 AND s.title = c.title
-                AND s.user_id = c.created_by_user_id
               ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
               LIMIT 1
             ) AS submission_external_link,
@@ -1052,7 +1066,6 @@ async function getUniversityBookById({ contentId, major, term }) {
                 AND s.section = 'university'
                 AND s.content_kind = 'book'
                 AND s.title = c.title
-                AND s.user_id = c.created_by_user_id
               ORDER BY COALESCE(s.reviewed_at, s.created_at) DESC, s.id DESC
               LIMIT 1
             ) AS submission_tags
@@ -1064,7 +1077,7 @@ async function getUniversityBookById({ contentId, major, term }) {
        AND ($2::text IS NULL OR c.major = $2 OR c.major IS NULL)
        AND ($3::text IS NULL OR c.term = $3 OR c.term IS NULL)
      LIMIT 1`,
-    [contentId, major || null, term || null]
+    [contentId, effectiveMajor || null, effectiveTerm || null]
   );
 
   return res.rows[0] || null;
